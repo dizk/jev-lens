@@ -33,8 +33,8 @@ interface PendingResult {
 
 export default function (pi: ExtensionAPI) {
 	const cfg: Config = loadConfig();
-	const classifier: Classifier = cfg.apiKey ? new JevClassifier(cfg) : new MockClassifier();
-	const usingMock = !cfg.apiKey;
+	const usingMock = cfg.forceMock || !cfg.apiKey;
+	const classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
 
 	let ledger = new Map<string, Decision>();
 	/** Classifications launched but not yet resolved, keyed by toolCallId. */

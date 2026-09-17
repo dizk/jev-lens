@@ -37,6 +37,8 @@ export interface Config {
 	stateHeadChars: number;
 	stateTailChars: number;
 	model: string;
+	/** Force the mock classifier even when a key is present (tests, dry runs). */
+	forceMock: boolean;
 	logFile: boolean;
 	apiKey: string | undefined;
 }
@@ -84,6 +86,7 @@ export function loadConfig(): Config {
 		stateHeadChars: num("JEV_MEMORY_STATE_HEAD", 2500),
 		stateTailChars: num("JEV_MEMORY_STATE_TAIL", 800),
 		model: process.env.JEV_MEMORY_MODEL || "jev-latest",
+		forceMock: process.env.JEV_MEMORY_CLASSIFIER === "mock",
 		logFile: process.env.JEV_MEMORY_LOG !== "0",
 		apiKey: process.env.TYPESAFE_API_KEY,
 	};
