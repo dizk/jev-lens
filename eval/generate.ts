@@ -53,7 +53,7 @@ function sh(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.Proce
 
 export interface RunResult {
 	cond: string; task: string; n: number; ok: boolean; testExit: number | null; timedOut: boolean; wallMs: number;
-	calls: number; input: number; cacheRead: number; output: number; toolCalls: number; cacheHit: number;
+	calls: number; input: number; cacheRead: number; output: number; toolCalls: number; cacheHit: number; finalPrompt: number;
 	pruned?: number; decisions?: number; sessionFile?: string; dir: string;
 }
 
@@ -78,7 +78,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	writeFileSync(join(dir, "test.out"), t.out + "\n" + t.err);
 
 	// Usage from the event stream.
-	let calls = 0, input = 0, cacheRead = 0, output = 0, toolCalls = 0;
+	let calls = 0, input = 0, cacheRead = 0, output = 0, toolCalls = 0, finalPrompt = 0;
 	const events = existsSync(join(dir, "events.jsonl")) ? readFileSync(join(dir, "events.jsonl"), "utf8").split("\n") : [];
 	for (const line of events) {
 		if (!line.trim()) continue;
@@ -89,11 +89,12 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 		input += e.message.usage?.input ?? 0;
 		cacheRead += e.message.usage?.cacheRead ?? 0;
 		output += e.message.usage?.output ?? 0;
+		finalPrompt = (e.message.usage?.input ?? 0) + (e.message.usage?.cacheRead ?? 0);
 		toolCalls += (e.message.content ?? []).filter((c) => c.type === "toolCall").length;
 	}
 	const result: RunResult = {
 		cond: args.cond, task: task.id, n, ok: !r.timedOut && t.code === 0, testExit: t.code, timedOut: r.timedOut, wallMs,
-		calls, input, cacheRead, output, toolCalls, cacheHit: input + cacheRead > 0 ? cacheRead / (input + cacheRead) : 0, dir,
+		calls, input, cacheRead, output, toolCalls, cacheHit: input + cacheRead > 0 ? cacheRead / (input + cacheRead) : 0, finalPrompt, dir,
 	};
 	const logPath = join(work, ".pi", "jev-memory.log");
 	if (existsSync(logPath)) {
