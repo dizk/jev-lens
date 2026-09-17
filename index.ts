@@ -21,7 +21,7 @@ import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
-import { buildPresendState, decideView, JevPresend, MockPresend, type PresendClassifier } from "./src/presend.ts";
+import { buildPresendState, decideView, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier } from "./src/presend.ts";
 import { buildCandidates, extractTerms, footer } from "./src/views.ts";
 import { loadConfig, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
@@ -327,8 +327,13 @@ export default function (pi: ExtensionAPI) {
 		const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistantText, toolName: event.toolName, args: event.input, isError: event.isError, cands, totalLines, totalChars: text.length });
 		try {
 			const answer = await presend.choose(state, cands.views.map((v) => v.kind), ctx.signal);
-			const view = decideView(answer, cands, cfg);
-			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
+			let view = decideView(answer, cands, cfg);
+			let expanded: number[] | undefined;
+			if (view.kind !== "full") {
+				const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, ctx.signal);
+				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > cfg.presendExpandAbove ? i : -1)).filter((i) => i >= 0); }
+			}
+			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
 			if (view.kind === "full") return;
 			presendTotals.compressed++;
 			presendTotals.tokensSaved += tokens - estimateTokensOfText(view.text);

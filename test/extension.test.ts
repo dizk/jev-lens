@@ -135,7 +135,7 @@ describe("pre-send compression and recall (mock)", () => {
 		expect(sent).toContain("export function normalizeCategory");
 		expect(sent).toContain('recall(id: "c7")');
 		expect(r.details.jevMemory.full).toBe(code);
-		expect(r.details.jevMemory.view).toBe("outline");
+		expect(["outline", "relevant"]).toContain(r.details.jevMemory.view);
 
 		const recall = tools.get("recall");
 		expect(recall).toBeDefined();

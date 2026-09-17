@@ -15,7 +15,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { loadConfig } from "../src/config.ts";
-import { buildPresendState, decideView, JevPresend, MockPresend, type PresendClassifier } from "../src/presend.ts";
+import { buildPresendState, decideView, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier } from "../src/presend.ts";
 import type { AgentMessage } from "../src/pi-types.ts";
 import { contentText, estimateTokensOfText } from "../src/text.ts";
 import { buildCandidates, extractTerms, type View } from "../src/views.ts";
@@ -78,7 +78,8 @@ async function main() {
 			if (cands.views.length < 2) continue;
 			const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistant, toolName: m.toolName, args, isError: m.isError, cands, totalLines: text.split("\n").length, totalChars: text.length });
 			const answer = await presend.choose(state, cands.views.map((v) => v.kind));
-			const view = decideView(answer, cands, cfg);
+			let view = decideView(answer, cands, cfg);
+			if (view.kind !== "full") { const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove); if (ex) view = ex.view; }
 			// what did the agent do next?
 			const path = (args as { path?: string })?.path;
 			let editMiss = false, quoteMiss = false, editsChecked = 0;

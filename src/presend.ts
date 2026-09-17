@@ -1,7 +1,7 @@
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import type { Config } from "./config.ts";
 import { truncate } from "./text.ts";
-import type { Candidates, View, ViewKind } from "./views.ts";
+import { relevantView, splitBlocks, type Block, type Candidates, type View, type ViewKind } from "./views.ts";
 
 export interface PresendState {
 	task: { first_user_request: string; latest_user_message: string };
@@ -19,6 +19,40 @@ export interface PresendDecision {
 
 export interface PresendClassifier {
 	choose(state: PresendState, kinds: ViewKind[], signal?: AbortSignal): Promise<{ choice: ViewKind; probabilities: Record<string, number>; confidence: number; needsFull: number }>;
+	/** Second step: for each block, P(the agent will need its body). */
+	expand(state: ExpandState, signal?: AbortSignal): Promise<number[]>;
+}
+
+export interface ExpandState {
+	task: PresendState["task"];
+	agent: PresendState["agent"];
+	file: { kind: string; total_lines: number };
+	blocks: { index: number; signature: string; lines: string; preview: string }[];
+}
+
+export function buildExpandState(base: PresendState, blocks: Block[], text: string): ExpandState {
+	const lines = text.split("\n");
+	return {
+		task: base.task,
+		agent: base.agent,
+		file: { kind: base.result.kind, total_lines: base.result.total_lines },
+		blocks: blocks.map((b, index) => ({ index, signature: b.name, lines: `${b.from}-${b.to}`, preview: truncate(lines.slice(b.from - 1, Math.min(b.to, b.from + 2)).join("\n"), 240) })),
+	};
+}
+
+export function expandQuestions(n: number) {
+	const q: Record<string, { type: "noul"; instructions: string; criteria: { true: string; false: string } }> = {};
+	for (let i = 0; i < n; i++) {
+		q[`b${i}`] = {
+			type: "noul",
+			instructions: `The agent working on \`task\` just read this file (\`agent.args\`) for the reason in \`agent.text_before_call\`. Will it need the full body of block \`blocks[${i}]\` (not just its signature) for its next step?`,
+			criteria: {
+				true: "The task or the agent's stated purpose concerns this block: it will edit it, call it in a specific way, explain its logic, or debug it.",
+				false: "The block is unrelated to the task, or knowing its signature and existence is enough.",
+			},
+		};
+	}
+	return q;
 }
 
 const VIEW_DESCRIPTIONS: Record<ViewKind, string> = {
@@ -28,6 +62,7 @@ const VIEW_DESCRIPTIONS: Record<ViewKind, string> = {
 	signals: "Command output reduced to errors, warnings, failing tests and the final summary lines with context, line-numbered. Enough for reacting to a failed or passed run.",
 	sample: "Header plus a sample of rows and the total count, for tabular or log-like data. Enough to learn the shape of the data, not its contents.",
 	head_tail: "The first and last lines only. Enough to see what the output is and how it ends.",
+	relevant: "Outline plus the full bodies of the blocks the agent will need.",
 };
 
 export function buildPresendState(
@@ -70,6 +105,10 @@ export function presendQuestions(kinds: ViewKind[]) {
 
 export class JevPresend implements PresendClassifier {
 	constructor(private client: TypeSafeClient, private model: string) {}
+	async expand(state: ExpandState, signal?: AbortSignal): Promise<number[]> {
+		const r = await this.client.systemOne({ state: state as never, questions: expandQuestions(state.blocks.length), model: this.model }, { signal, timeout: 15000 });
+		return state.blocks.map((_, i) => (r.answers[`b${i}`] as { noul: number }).noul);
+	}
 	async choose(state: PresendState, kinds: ViewKind[], signal?: AbortSignal) {
 		const r = await this.client.systemOne({ state: state as never, questions: presendQuestions(kinds), model: this.model }, { signal, timeout: 15000 });
 		return { choice: r.answers.view.choice as ViewKind, probabilities: r.answers.view.probabilities as Record<string, number>, confidence: r.answers.view.confidence, needsFull: r.answers.needs_full.noul };
@@ -77,6 +116,11 @@ export class JevPresend implements PresendClassifier {
 }
 
 export class MockPresend implements PresendClassifier {
+	async expand(state: ExpandState): Promise<number[]> {
+		// deterministic: blocks whose signature mentions a term from the task
+		const words = (state.task.first_user_request + " " + state.agent.args).toLowerCase();
+		return state.blocks.map((b) => (b.signature.toLowerCase().split(/[^a-z0-9_]+/).some((w) => w.length > 4 && words.includes(w)) ? 0.9 : 0.1));
+	}
 	constructor(private pick: (state: PresendState, kinds: ViewKind[]) => ViewKind = (s, kinds) => (s.result.kind === "data" && kinds.includes("sample") ? "sample" : kinds.includes("outline") ? "outline" : "full")) {}
 	async choose(state: PresendState, kinds: ViewKind[]) {
 		const choice = this.pick(state, kinds);
@@ -100,4 +144,28 @@ export function decideView(
 	if ((answer.probabilities.full ?? 0) > cfg.presendFullMassAbove) return full;
 	if (answer.confidence < cfg.presendMinConfidence) return full;
 	return cands.views.find((v) => v.kind === answer.choice) ?? full;
+}
+
+/**
+ * Second node of the pre-send graph: when a code file was reduced to its outline, ask jev which
+ * block bodies the agent will need and put those back. Returns undefined when not applicable.
+ */
+export async function expandRelevantBlocks(
+	presend: PresendClassifier,
+	base: PresendState,
+	text: string,
+	cands: Candidates,
+	chosen: View,
+	threshold: number,
+	signal?: AbortSignal,
+): Promise<{ view: View; blocks: Block[]; probs: number[] } | undefined> {
+	if (cands.kind !== "code" || (chosen.kind !== "outline" && chosen.kind !== "focus")) return undefined;
+	const blocks = splitBlocks(text);
+	if (blocks.length < 2) return undefined;
+	const probs = await presend.expand(buildExpandState(base, blocks, text), signal);
+	const expand = new Set<number>();
+	probs.forEach((p, i) => { if (p > threshold) expand.add(i); });
+	const view = relevantView(text, cands.kind, blocks, expand);
+	if (view.chars >= cands.views[0].chars * 0.9) return { view: cands.views[0], blocks, probs };
+	return { view, blocks, probs };
 }

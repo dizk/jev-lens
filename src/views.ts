@@ -3,7 +3,7 @@
  * text (never generated), with line numbers so the agent can ask for exact ranges later.
  */
 
-export type ViewKind = "full" | "outline" | "focus" | "signals" | "sample" | "head_tail";
+export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "sample" | "head_tail";
 
 export interface View {
 	kind: ViewKind;
@@ -183,4 +183,55 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 export function footer(view: View, toolCallId: string, total: number): string {
 	if (view.kind === "full") return "";
 	return `\n\n[jev-memory: showing the "${view.kind}" view, ${view.lines} of ${total} lines. Omitted lines are marked ⋯. Call recall(id: "${toolCallId}") for the full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.]`;
+}
+
+export interface Block {
+	/** The signature line (trimmed). */
+	name: string;
+	/** 1-based inclusive line range. */
+	from: number;
+	to: number;
+}
+
+/**
+ * Split code into top-level blocks: each block starts at a signature line with no indentation
+ * (or the least indentation seen) and runs until the next one. Leading imports form one block.
+ */
+export function splitBlocks(text: string, maxBlocks = 32): Block[] {
+	const lines = text.split("\n");
+	const starts: number[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		const l = lines[i];
+		if (!l.trim()) continue;
+		if (/^\S/.test(l) && SIG_RE.test(l) && !/^\s*(import|from|require|use|package)\b/.test(l) && !/^\s*(\/\*\*|\*\/|\*|#|\/\/)/.test(l)) starts.push(i);
+	}
+	if (starts.length < 2) return [];
+	const blocks: Block[] = [];
+	if (starts[0] > 0) blocks.push({ name: "(header: imports, constants)", from: 1, to: starts[0] });
+	for (let k = 0; k < starts.length; k++) {
+		const from = starts[k];
+		let to = k + 1 < starts.length ? starts[k + 1] - 1 : lines.length - 1;
+		// give a preceding doc comment to the block it documents
+		blocks.push({ name: lines[from].trim().slice(0, 120), from: from + 1, to: to + 1 });
+	}
+	for (let k = 1; k < blocks.length; k++) {
+		const prevEnd = blocks[k - 1].to;
+		let j = prevEnd - 1;
+		while (j >= blocks[k - 1].from && /^\s*(\/\*\*|\*|\/\/|#)/.test(lines[j])) j--;
+		if (j < prevEnd - 1 && j + 1 > blocks[k - 1].from - 1) { blocks[k].from = j + 2; blocks[k - 1].to = j + 1; }
+	}
+	return blocks.slice(0, maxBlocks);
+}
+
+/** Outline plus the full bodies of the chosen blocks. */
+export function relevantView(text: string, kind: ContentKind, blocks: Block[], expand: Set<number>): View {
+	const lines = text.split("\n");
+	const outline = outlineView(text, kind);
+	const idx = new Set(outline.included.map((n) => n - 1));
+	for (const b of expand) {
+		const blk = blocks[b];
+		if (!blk) continue;
+		for (let i = blk.from - 1; i <= blk.to - 1; i++) idx.add(i);
+	}
+	return make("relevant", lines, [...idx].sort((a, b) => a - b));
 }
