@@ -1,7 +1,7 @@
 /**
  * Run the fixture tasks through pi headless, with and without the extension, and score them.
  *
- *   node --import tsx eval/generate.ts --cond baseline|jev [--tasks a,b] [--repeat N] [--parallel 2] [--model openai-codex/gpt-5.6-luna]
+ *   node --import tsx eval/generate.ts --cond baseline|jev|jev-batch [--mode rolling|batch] [--tasks a,b] [--repeat N] [--from N] [--parallel 2] [--model openai-codex/gpt-5.6-luna]
  *
  * Each run gets a fresh copy of eval/fixture, its own session dir, and is scored by copying
  * the task's hidden test into tests/ and running `node --test tests/`. Results are appended
@@ -15,20 +15,21 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE = join(ROOT, "eval", "fixture");
 const RUNS = join(ROOT, "eval", "runs");
-const TASKS = JSON.parse(readFileSync(join(ROOT, "eval", "tasks", "tasks.json"), "utf8")) as { id: string; prompt: string; hidden: string }[];
+const TASKS = JSON.parse(readFileSync(join(ROOT, "eval", "tasks", "tasks.json"), "utf8")) as { id: string; prompt: string; hidden: string; scoreOnlyHidden?: boolean }[];
 
-interface Args { cond: "baseline" | "jev"; tasks?: string[]; repeat: number; parallel: number; model: string; timeoutMs: number; mode: "rolling" | "batch" }
+interface Args { cond: string; tasks?: string[]; repeat: number; from: number; parallel: number; model: string; timeoutMs: number; mode: "rolling" | "batch" | "budget" }
 function parseArgs(argv: string[]): Args {
-	const a: Args = { cond: "baseline", repeat: 1, parallel: 2, model: "openai-codex/gpt-5.6-luna", timeoutMs: 15 * 60 * 1000, mode: "rolling" };
+	const a: Args = { cond: "baseline", repeat: 1, from: 1, parallel: 2, model: "openai-codex/gpt-5.6-luna", timeoutMs: 15 * 60 * 1000, mode: "rolling" };
 	for (let i = 0; i < argv.length; i++) {
 		const v = argv[i];
-		if (v === "--cond") a.cond = argv[++i] === "jev" ? "jev" : "baseline";
+		if (v === "--cond") a.cond = argv[++i];
 		else if (v === "--tasks") a.tasks = argv[++i].split(",");
 		else if (v === "--repeat") a.repeat = Number(argv[++i]);
+		else if (v === "--from") a.from = Number(argv[++i]);
 		else if (v === "--parallel") a.parallel = Number(argv[++i]);
 		else if (v === "--model") a.model = argv[++i];
 		else if (v === "--timeout") a.timeoutMs = Number(argv[++i]) * 1000;
-		else if (v === "--mode") a.mode = argv[++i] === "batch" ? "batch" : "rolling";
+		else if (v === "--mode") { const m = argv[++i]; a.mode = m === "batch" || m === "budget" ? m : "rolling"; }
 	}
 	return a;
 }
@@ -64,7 +65,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	mkdirSync(sessions, { recursive: true });
 	cpSync(FIXTURE, work, { recursive: true });
 	const piArgs = ["--mode", "json", "--model", args.model, "--thinking", "low", "--session-dir", sessions, "--no-approve"];
-	if (args.cond === "jev") piArgs.unshift("-e", join(ROOT, "index.ts"));
+	if (args.cond.startsWith("jev")) piArgs.unshift("-e", join(ROOT, "index.ts"));
 	piArgs.push(task.prompt);
 	const t0 = Date.now();
 	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_MEMORY_MODE: args.mode } });
@@ -73,7 +74,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 
 	// Score: hidden test + existing suite.
 	cpSync(join(ROOT, "eval", "tasks", "hidden", task.hidden), join(work, "tests", `zz-hidden-${task.hidden}`));
-	const t = await sh("node", ["--test"], { cwd: work, timeoutMs: 120_000 });
+	const t = await sh("node", task.scoreOnlyHidden ? ["--test", `tests/zz-hidden-${task.hidden}`] : ["--test"], { cwd: work, timeoutMs: 120_000 });
 	writeFileSync(join(dir, "test.out"), t.out + "\n" + t.err);
 
 	// Usage from the event stream.
@@ -119,7 +120,7 @@ async function main() {
 	const tasks = TASKS.filter((t) => !args.tasks || args.tasks.includes(t.id));
 	mkdirSync(RUNS, { recursive: true });
 	const queue: { task: (typeof TASKS)[number]; n: number }[] = [];
-	for (let n = 1; n <= args.repeat; n++) for (const task of tasks) queue.push({ task, n });
+	for (let n = args.from; n < args.from + args.repeat; n++) for (const task of tasks) queue.push({ task, n });
 	const results: RunResult[] = [];
 	const worker = async () => {
 		while (queue.length) {

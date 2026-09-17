@@ -32,7 +32,8 @@
   {
     "id": "architecture-doc",
     "prompt": "Read the whole codebase and write ARCHITECTURE.md describing every module in src/, the data model of a ledger entry, how data flows from a CSV file to a report, and how to run the tests. Do not change any code.",
-    "hidden": "architecture-doc.test.js"
+    "hidden": "architecture-doc.test.js",
+    "scoreOnlyHidden": true
   },
   {
     "id": "config-loader",

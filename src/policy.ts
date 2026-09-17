@@ -34,6 +34,36 @@ export function decideBucket(p: { needed: number; outcomeOnly: number }, cfg: Co
 	return "keep";
 }
 
+/** Tokens that pending (not yet applied) decisions would remove from this message list. */
+export function pendingPrunable(messages: AgentMessage[], ledger: Map<string, Decision>, cfg: Config): number {
+	let n = 0;
+	for (const m of messages) {
+		if (m.role !== "toolResult") continue;
+		const d = ledger.get(m.toolCallId);
+		if (!d || d.status !== "pending" || d.bucket === "keep") continue;
+		const before = estimateTokensOfText(contentText(m.content));
+		const after = estimateTokensOfText(contentText((transformToolResult(m, d, cfg) as ToolResultMessage).content));
+		n += Math.max(0, before - after);
+	}
+	return n;
+}
+
+/** Decide whether this call should apply pending decisions, given the mode and cache state. */
+export function shouldApplyPending(
+	mode: Config["mode"],
+	cfg: Config,
+	coldCache: boolean,
+	pendingTokens: number,
+	promptTokens: number,
+): { apply: boolean; reason: string } {
+	if (coldCache) return { apply: true, reason: "cold-cache" };
+	if (mode === "rolling") return { apply: true, reason: "rolling" };
+	if (mode === "budget" && pendingTokens >= cfg.budgetMinTokens && pendingTokens >= cfg.budgetFraction * promptTokens) {
+		return { apply: true, reason: "budget" };
+	}
+	return { apply: false, reason: mode };
+}
+
 export interface ApplyResult {
 	messages: AgentMessage[];
 	tokensOriginal: number;

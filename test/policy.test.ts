@@ -97,3 +97,21 @@ describe("rebuildLedger", () => {
 		expect(l.get("a")?.status).toBe("applied");
 	});
 });
+
+describe("shouldApplyPending / pendingPrunable", () => {
+	it("rolling always applies, batch never (unless cold), budget when the share is large enough", async () => {
+		const { shouldApplyPending, pendingPrunable } = await import("../src/policy.ts");
+		expect(shouldApplyPending("rolling", cfg, false, 0, 1000).apply).toBe(true);
+		expect(shouldApplyPending("batch", cfg, false, 100000, 1000).apply).toBe(false);
+		expect(shouldApplyPending("batch", cfg, true, 0, 1000).reason).toBe("cold-cache");
+		const c = { ...cfg, budgetFraction: 0.15, budgetMinTokens: 4000 };
+		expect(shouldApplyPending("budget", c, false, 3999, 10000).apply).toBe(false);
+		expect(shouldApplyPending("budget", c, false, 4000, 100000).apply).toBe(false);
+		expect(shouldApplyPending("budget", c, false, 4000, 20000).reason).toBe("budget");
+		const msgs = [toolResult("a", "A".repeat(4000)), toolResult("b", "B".repeat(4000))];
+		const ledger = new Map([["a", decision("a", "forget")], ["b", decision("b", "keep")]]);
+		const n = pendingPrunable(msgs, ledger, cfg);
+		expect(n).toBeGreaterThan(900);
+		expect(n).toBeLessThan(1000);
+	});
+});

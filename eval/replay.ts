@@ -2,7 +2,7 @@
  * Offline replay: run the jev classifier over recorded pi sessions and simulate the
  * cache-aware policy, without calling the coding model.
  *
- *   node --import tsx eval/replay.ts [--mock] [--mode rolling|batch] [--json out.json] <session.jsonl | dir>...
+ *   node --import tsx eval/replay.ts [--mock] [--mode rolling|batch|budget] [--json out.json] <session.jsonl | dir>...
  *
  * Reports, per session and in total: tokens sent with and without pruning, a simulated
  * prompt-cache split (prefix identical to the previous call = cached), decisions by
@@ -13,20 +13,20 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "../src/classifier.ts";
 import { loadConfig } from "../src/config.ts";
-import { applyLedger, decideBucket } from "../src/policy.ts";
+import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "../src/policy.ts";
 import type { AgentMessage } from "../src/pi-types.ts";
 import { contentText, describeToolCall, estimateTokensOfText } from "../src/text.ts";
 import type { Decision } from "../src/types.ts";
 
 const CACHED_PRICE = 0.1; // cached input relative to uncached, OpenAI-style
 
-interface Args { mock: boolean; mode: "rolling" | "batch"; json?: string; paths: string[] }
+interface Args { mock: boolean; mode: "rolling" | "batch" | "budget"; json?: string; paths: string[] }
 function parseArgs(argv: string[]): Args {
 	const a: Args = { mock: false, mode: "rolling", paths: [] };
 	for (let i = 0; i < argv.length; i++) {
 		const v = argv[i];
 		if (v === "--mock") a.mock = true;
-		else if (v === "--mode") a.mode = argv[++i] === "batch" ? "batch" : "rolling";
+		else if (v === "--mode") { const m = argv[++i]; a.mode = m === "batch" || m === "budget" ? m : "rolling"; }
 		else if (v === "--json") a.json = argv[++i];
 		else a.paths.push(v);
 	}
@@ -96,7 +96,7 @@ export interface SessionReport {
 	decisions: { tool: string; summary: string; bucket: string; p: Decision["p"]; tokens: number }[];
 }
 
-export async function replaySession(file: string, classifier: Classifier, mode: "rolling" | "batch"): Promise<SessionReport> {
+export async function replaySession(file: string, classifier: Classifier, mode: "rolling" | "batch" | "budget"): Promise<SessionReport> {
 	const cfg = loadConfig();
 	cfg.mode = mode;
 	const messages = loadMessages(file);
@@ -135,8 +135,9 @@ export async function replaySession(file: string, classifier: Classifier, mode: 
 		// ---- the call that produced this assistant message: context = messages[0..k)
 		report.calls++;
 		const context = messages.slice(0, k);
-		const applyPending = mode === "rolling";
-		const result = applyLedger(context, ledger, cfg, applyPending, report.calls, mode);
+		const promptTokens = context.reduce((a, m) => a + tokensOf(m), 0);
+		const { apply: applyPending, reason } = shouldApplyPending(mode, cfg, false, pendingPrunable(context, ledger, cfg), promptTokens);
+		const result = applyLedger(context, ledger, cfg, applyPending, report.calls, reason);
 		for (const d of result.appliedNow) {
 			if (d.bucket === "forget") {
 				const rp = (d as Decision & { path?: string }).path;

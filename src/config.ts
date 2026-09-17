@@ -2,13 +2,21 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type SealMode = "rolling" | "batch";
+export type SealMode = "rolling" | "batch" | "budget";
 
 export interface Config {
 	/** Disable all pruning (classification still runs and logs). */
 	enabled: boolean;
-	/** rolling: apply decisions at the next LLM call. batch: apply only when the cache is cold or on compaction. */
+	/**
+	 * rolling: apply decisions at the next LLM call (smallest prompt, one cache rewrite per call while pruning).
+	 * batch: apply only when the cache is cold or on compaction (best cache, prompt shrinks late).
+	 * budget: like batch, but also apply when pending prunable tokens exceed a share of the prompt (one rewrite buys many calls).
+	 */
 	mode: SealMode;
+	/** budget mode: apply pending decisions when they cover at least this fraction of the outgoing prompt... */
+	budgetFraction: number;
+	/** ...and at least this many tokens. */
+	budgetMinTokens: number;
 	/** P(needed) below this → forget (stub). */
 	forgetBelow: number;
 	/** P(needed) below this and P(outcomeOnly) above trimAbove → trim to head+tail. */
@@ -57,10 +65,13 @@ function num(name: string, fallback: number): number {
 
 export function loadConfig(): Config {
 	loadDotEnv();
-	const mode = process.env.JEV_MEMORY_MODE === "batch" ? "batch" : "rolling";
+	const envMode = process.env.JEV_MEMORY_MODE;
+	const mode: SealMode = envMode === "batch" || envMode === "budget" || envMode === "rolling" ? envMode : "budget";
 	return {
 		enabled: process.env.JEV_MEMORY_DISABLED !== "1",
 		mode,
+		budgetFraction: num("JEV_MEMORY_BUDGET_FRACTION", 0.15),
+		budgetMinTokens: num("JEV_MEMORY_BUDGET_MIN_TOKENS", 4000),
 		forgetBelow: num("JEV_MEMORY_FORGET_BELOW", 0.25),
 		trimBelow: num("JEV_MEMORY_TRIM_BELOW", 0.5),
 		trimAbove: num("JEV_MEMORY_TRIM_ABOVE", 0.6),

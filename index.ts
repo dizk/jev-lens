@@ -22,7 +22,7 @@ import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "
 import { loadConfig, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { appendNotes, memoryPromptSection, readMemoryFile } from "./src/memory-file.ts";
-import { applyLedger, decideBucket } from "./src/policy.ts";
+import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "./src/policy.ts";
 import { contentText, describeToolCall, estimateTokensOfText, toolCallsOf, truncate } from "./src/text.ts";
 import type { CallStats, Decision, DurableNote } from "./src/types.ts";
 
@@ -242,8 +242,9 @@ export default function (pi: ExtensionAPI) {
 			await Promise.race([Promise.allSettled([...inflight.values()]), new Promise((r) => setTimeout(r, cfg.classifyWaitMs))]);
 		}
 
-		const applyPending = cfg.mode === "rolling" || coldCache;
-		const reason = coldCache ? "cold-cache" : cfg.mode;
+		const pendingTokens = pendingPrunable(event.messages, ledger, cfg);
+		const promptTokens = event.messages.reduce((a, m) => a + estimateTokensOfText(contentText((m as { content?: unknown }).content)), 0);
+		const { apply: applyPending, reason } = shouldApplyPending(cfg.mode, cfg, coldCache, pendingTokens, promptTokens);
 		const result = applyLedger(event.messages, ledger, cfg, applyPending, callIndex, reason);
 		for (const d of result.appliedNow) persist(d);
 		totals.applied += result.appliedNow.length;
@@ -263,7 +264,7 @@ export default function (pi: ExtensionAPI) {
 			pendingHeld: result.pendingHeld,
 			coldCache,
 		};
-		log({ event: "context", ...stats, inflight: inflight.size });
+		log({ event: "context", ...stats, reason, pendingTokens, promptTokens, inflight: inflight.size });
 		status(ctx);
 		return { messages: result.messages };
 	});
