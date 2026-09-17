@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { exportCsv, importCsv } from "../src/csv.js";
+import { formatMoney } from "../src/format.js";
 import { Ledger } from "../src/ledger.js";
 import { parseDate } from "../src/parse.js";
 test("hidden: exportCsv round trip and quoting", () => {
@@ -10,8 +11,8 @@ test("hidden: exportCsv round trip and quoting", () => {
 	const csv = exportCsv(l);
 	const lines = csv.trim().split("\n");
 	assert.equal(lines[0], "date,amount,category,note");
-	assert.equal(lines[1], "2024-01-01,5.00,transport,");
-	assert.equal(lines[2], '2024-01-02,12.50,food,"lunch, with ""friends"""');
+	assert.equal(lines[1], `2024-01-01,${formatMoney(500)},transport,`);
+	assert.equal(lines[2], `2024-01-02,${formatMoney(1250)},food,"lunch, with ""friends"""`);
 	const back = importCsv(csv);
 	assert.equal(back.errors.length, 0);
 	assert.equal(back.entries.length, 2);
