@@ -75,5 +75,12 @@ node --import tsx eval/generate.ts --cond jev
 node --import tsx eval/report.ts                       # compare conditions
 ```
 
-`eval/fixture` is a small dependency-free JavaScript project with planted bugs; `eval/tasks/tasks.json` holds eight
-tasks, each scored by a hidden test. See `STATUS.md` for the current numbers.
+`eval/fixture` is a small dependency-free JavaScript project with planted bugs; `eval/tasks/tasks.json` holds ten
+tasks (eight short, a five-part compound and an eight-part marathon), each scored by a hidden test.
+
+Headline from the first night of runs (details and caveats in `STATUS.md`): decisions are sensible and the mechanism
+holds (frozen decisions, stable prefix), but under a 10× prompt-cache discount pruning after first send is a
+**context-budget** tool, not a cost tool. Rolling mode cut input tokens 19 % on long sessions and still cost 17 % more
+because each prune rewrites the cached prefix; budget mode keeps the cache (65 % hit vs 70 % baseline) and passed
+12/13 tasks (baseline 13/13). The savings have to come from not sending large outputs in the first place, which is the
+next step.
