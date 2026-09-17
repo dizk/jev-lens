@@ -1,0 +1,601 @@
+date,amount,category,note
+2023-11-28,548.29,transport,books
+2024-06-03,14.45,transport,dentist
+2024-08-02,9.18,subscriptions,shoes
+2023-08-15,4.70,gifts,monthly rent
+2024-07-27,1081.60,utilities,books
+2024-12-30,705.96,gifts,coffee
+2024-04-21,35.96,household,jacket
+2023-11-04,265.04,subscriptions,bus ticket
+2024-03-04,115.78,food,gym
+2024-07-25,813.75,health,flight
+2024-04-12,769.94,education,bus ticket
+2024-12-19,181.82,entertainment,course fee
+2024-11-15,855.46,transport,groceries
+2023-10-22,89.33,transport,cinema
+2024-07-16,930.52,entertainment,course fee
+2024-01-03,41.60,rent,electricity
+2023-08-27,252.71,food,electricity
+2024-01-14,625.49,subscriptions,flowers
+2023-02-25,1451.89,gifts,cleaning supplies
+2024-02-08,8.01,utilities,taxi
+2023-12-15,1066.78,transport,books
+2023-03-14,191.94,health,flight
+2023-05-06,156.66,travel,birthday gift
+2023-04-15,978.62,rent,"concert, paid by card"
+2024-06-24,1414.15,entertainment,flowers
+2024-12-13,165.15,utilities,dentist
+2024-05-29,21.12,utilities,cleaning supplies
+2023-08-21,13.60,entertainment,groceries
+2024-12-10,1308.57,health,books
+2023-04-15,704.37,subscriptions,lunch
+2024-10-30,21.95,clothing,course fee
+2024-05-04,53.56,household,cleaning supplies
+2023-03-28,44.04,subscriptions,taxi
+2023-05-30,186.84,rent,dentist
+2023-01-22,1149.67,household,electricity
+2023-07-19,79.09,gifts,jacket
+2023-11-30,631.07,health,taxi
+2024-06-13,1001.65,rent,concert
+2024-03-26,47.04,rent,electricity
+2023-05-04,1018.35,travel,monthly rent
+2023-02-28,1272.26,travel,"dentist, paid by card"
+2023-03-06,1005.55,utilities,course fee
+2024-06-04,1441.50,gifts,train to Bergen
+2023-07-27,58.40,health,bus ticket
+2024-03-14,6.24,household,flowers
+2023-05-27,967.74,transport,cleaning supplies
+2023-06-16,253.08,gifts,cleaning supplies
+2023-07-20,45.81,gifts,taxi
+2023-01-19,24.29,transport,jacket
+2023-04-18,6.88,entertainment,electricity
+2024-11-23,649.37,subscriptions,groceries
+2023-04-02,18.19,entertainment,lunch
+2023-09-24,6.86,travel,lunch
+2024-07-20,26.23,gifts,course fee
+2023-04-23,93.33,education,birthday gift
+2023-07-30,160.02,food,"train to Bergen, paid by card"
+2023-01-19,174.29,utilities,taxi
+2024-10-27,158.60,gifts,birthday gift
+2023-08-24,1206.73,rent,cleaning supplies
+2023-02-25,23.99,clothing,cinema
+2024-11-12,263.75,subscriptions,jacket
+2023-02-16,64.11,health,streaming
+2024-07-14,20.76,health,"cinema, paid by card"
+2024-01-26,6.87,gifts,lunch
+2023-04-02,184.30,entertainment,flowers
+2024-08-22,655.25,subscriptions,cleaning supplies
+2024-05-21,10.67,household,concert
+2024-12-18,1023.76,subscriptions,lunch
+2024-08-21,1456.08,utilities,"bus ticket, paid by card"
+2023-05-17,288.66,gifts,dinner with team
+2024-10-03,88.48,transport,light bulbs
+2024-07-02,167.28,entertainment,bus ticket
+2023-08-29,77.46,travel,cleaning supplies
+2024-12-01,18.66,transport,flight
+2023-09-18,39.79,food,groceries
+2023-10-03,47.87,entertainment,course fee
+2024-04-20,1493.30,utilities,birthday gift
+2024-04-29,148.51,entertainment,cleaning supplies
+2023-08-04,45.28,health,electricity
+2024-10-08,31.51,travel,groceries
+2023-06-12,157.67,household,electricity
+2024-01-21,255.26,clothing,monthly rent
+2023-07-20,272.44,transport,cleaning supplies
+2024-08-26,6.43,entertainment,monthly rent
+2024-11-08,281.97,clothing,concert
+2024-01-18,529.01,clothing,dentist
+2023-03-24,4.87,education,birthday gift
+2024-07-17,152.21,entertainment,light bulbs
+2024-10-30,800.84,education,cleaning supplies
+2024-10-20,78.20,gifts,jacket
+2023-12-07,59.80,utilities,bus ticket
+2024-07-23,758.36,utilities,lunch
+2024-02-27,228.84,health,dinner with team
+2024-08-11,1003.40,utilities,bus ticket
+2023-09-12,200.82,food,"electricity, paid by card"
+2024-12-27,245.19,food,bus ticket
+2024-06-24,51.62,utilities,electricity
+2024-11-29,251.11,transport,dentist
+2023-01-02,1419.92,household,birthday gift
+2024-10-03,16.60,transport,bus ticket
+2024-08-19,13.12,food,dentist
+2024-04-16,18.16,travel,concert
+2023-09-10,3.70,food,pharmacy
+2024-11-21,42.71,health,jacket
+2024-12-13,21.61,food,birthday gift
+2024-05-31,5.91,utilities,taxi
+2023-10-30,8.32,travel,coffee
+2023-02-27,57.03,food,flight
+2023-02-23,949.64,health,light bulbs
+2023-03-23,685.51,household,"taxi, paid by card"
+2024-11-11,254.96,rent,"monthly rent, paid by card"
+2023-10-14,1385.17,utilities,cleaning supplies
+2023-11-13,141.09,utilities,books
+2024-04-02,13.20,education,coffee
+2024-10-02,46.47,food,train to Bergen
+2023-03-06,772.31,food,train to Bergen
+2024-12-07,503.77,education,"bus ticket, paid by card"
+2023-08-28,220.36,entertainment,coffee
+2023-05-16,1302.57,entertainment,course fee
+2024-09-13,960.78,transport,concert
+2023-06-13,533.86,gifts,streaming
+2024-03-12,53.24,utilities,monthly rent
+2024-12-27,68.49,subscriptions,gym
+2024-07-05,206.04,entertainment,train to Bergen
+2024-01-17,16.74,utilities,jacket
+2024-08-15,12.92,gifts,concert
+2023-04-13,297.47,utilities,taxi
+2023-02-11,550.39,subscriptions,pharmacy
+2024-01-17,1103.04,food,monthly rent
+2024-12-27,37.96,food,pharmacy
+2023-02-09,36.77,health,coffee
+2023-07-09,41.82,gifts,groceries
+2023-04-14,654.55,transport,flowers
+2024-12-13,296.71,food,birthday gift
+2024-01-01,25.10,education,pharmacy
+2024-02-19,21.65,transport,bus ticket
+2024-01-09,514.83,rent,flowers
+2024-02-11,870.84,rent,electricity
+2023-06-15,279.14,utilities,birthday gift
+2023-02-14,553.37,clothing,bus ticket
+2024-09-27,41.92,subscriptions,cleaning supplies
+2023-07-20,71.23,gifts,cinema
+2023-05-07,10.67,food,dentist
+2024-11-19,617.73,travel,dentist
+2023-11-10,106.30,education,books
+2024-03-24,20.98,utilities,taxi
+2024-04-14,50.52,rent,books
+2023-04-04,48.53,education,electricity
+2023-11-18,554.26,clothing,flowers
+2023-05-20,1114.12,transport,pharmacy
+2024-05-18,1294.98,household,jacket
+2023-12-26,823.84,entertainment,taxi
+2024-05-29,1091.89,gifts,jacket
+2023-02-07,132.97,education,streaming
+2023-06-22,47.94,education,books
+2024-04-08,34.20,entertainment,dentist
+2024-02-08,124.01,subscriptions,electricity
+2023-03-25,27.65,entertainment,concert
+2024-10-16,263.68,household,lunch
+2023-08-15,932.23,health,dinner with team
+2023-08-21,554.39,health,birthday gift
+2024-01-01,32.98,utilities,books
+2024-05-01,1301.50,rent,taxi
+2024-10-15,206.33,food,dinner with team
+2024-07-29,1078.47,gifts,light bulbs
+2023-06-19,32.32,rent,jacket
+2023-04-18,2.72,clothing,pharmacy
+2024-10-20,31.40,gifts,birthday gift
+2024-10-02,1282.97,gifts,lunch
+2024-03-23,150.27,rent,jacket
+2023-09-25,835.52,household,train to Bergen
+2023-09-30,1185.73,entertainment,birthday gift
+2023-08-11,6.95,household,pharmacy
+2023-12-01,128.84,education,course fee
+2024-07-03,29.23,clothing,light bulbs
+2023-11-12,1085.33,rent,"electricity, paid by card"
+2023-04-25,8.19,household,"lunch, paid by card"
+2023-05-22,1197.01,food,bus ticket
+2024-01-08,1033.89,transport,course fee
+2023-04-20,533.86,transport,flowers
+2024-05-03,7.79,entertainment,streaming
+2023-09-25,782.59,health,streaming
+2024-09-08,31.22,clothing,lunch
+2023-04-11,22.11,household,bus ticket
+2023-10-22,11.88,food,books
+2024-05-18,1467.16,health,concert
+2023-06-12,80.12,rent,monthly rent
+2023-03-24,30.44,education,streaming
+2024-02-15,269.72,education,lunch
+2023-11-07,272.34,education,jacket
+2023-05-10,1252.99,food,books
+2024-06-18,1162.10,health,cinema
+2024-12-06,182.17,education,course fee
+2023-07-16,1326.52,rent,light bulbs
+2023-09-11,43.94,health,pharmacy
+2023-04-15,11.55,rent,birthday gift
+2024-03-21,50.60,utilities,cleaning supplies
+2023-01-13,1193.44,education,birthday gift
+2023-05-26,16.92,clothing,course fee
+2024-10-24,1222.22,household,shoes
+2024-11-26,54.78,education,course fee
+2024-03-05,16.06,entertainment,coffee
+2023-01-21,38.05,education,streaming
+2024-02-03,274.29,gifts,pharmacy
+2023-07-24,1074.56,utilities,course fee
+2023-01-17,252.12,household,taxi
+2024-12-01,1432.69,subscriptions,books
+2023-09-16,131.91,clothing,flowers
+2023-12-27,50.59,gifts,jacket
+2024-02-06,28.80,education,pharmacy
+2024-07-29,646.26,education,coffee
+2023-10-29,201.89,health,jacket
+2024-01-21,295.21,food,light bulbs
+2024-01-02,104.51,subscriptions,flowers
+2024-01-07,10.86,subscriptions,streaming
+2023-05-24,1082.46,food,pharmacy
+2024-11-02,18.99,rent,taxi
+2023-06-06,1034.52,household,flight
+2023-04-03,270.30,utilities,groceries
+2024-06-27,6.56,gifts,monthly rent
+2023-08-28,152.51,travel,electricity
+2023-09-10,30.89,rent,streaming
+2024-07-30,103.11,clothing,gym
+2024-10-14,22.90,education,light bulbs
+2023-12-05,48.90,food,pharmacy
+2024-10-02,46.45,travel,concert
+2023-08-04,18.48,entertainment,birthday gift
+2024-05-20,771.70,health,pharmacy
+2023-05-01,799.22,education,bus ticket
+2023-02-11,906.03,food,cleaning supplies
+2023-01-07,975.05,food,concert
+2024-09-18,1173.70,subscriptions,gym
+2023-02-10,40.69,education,cinema
+2024-03-07,275.94,rent,birthday gift
+2023-09-22,52.02,clothing,shoes
+2023-02-25,166.20,subscriptions,course fee
+2024-04-02,1093.86,rent,groceries
+2024-07-15,7.92,education,lunch
+2023-01-10,41.66,utilities,monthly rent
+2023-01-19,950.78,rent,dinner with team
+2024-12-31,60.54,education,dentist
+2024-04-16,40.83,household,"dinner with team, paid by card"
+2023-01-16,212.26,entertainment,birthday gift
+2023-06-19,253.78,health,shoes
+2024-04-26,60.57,education,cinema
+2024-03-03,237.87,subscriptions,streaming
+2023-03-04,1301.94,health,flight
+2023-01-16,188.32,utilities,cleaning supplies
+2024-01-21,270.91,household,lunch
+2023-10-02,26.51,entertainment,electricity
+2024-08-08,1297.26,education,groceries
+2023-03-29,881.74,utilities,birthday gift
+2024-11-24,1426.00,food,cleaning supplies
+2023-03-31,119.43,subscriptions,concert
+2024-06-18,20.62,utilities,bus ticket
+2024-12-18,858.89,rent,"jacket, paid by card"
+2024-05-20,23.69,rent,streaming
+2023-12-20,18.27,subscriptions,groceries
+2023-08-07,238.17,subscriptions,flight
+2023-09-18,114.88,transport,lunch
+2024-07-24,23.44,subscriptions,flowers
+2023-05-03,42.97,education,bus ticket
+2024-11-16,71.15,utilities,light bulbs
+2023-02-09,559.28,food,dinner with team
+2024-06-09,43.16,transport,electricity
+2023-01-06,798.79,travel,flowers
+2023-11-28,129.21,rent,taxi
+2023-05-27,55.03,food,cinema
+2023-08-14,873.10,rent,taxi
+2024-01-30,195.94,health,jacket
+2024-10-05,23.23,household,taxi
+2023-05-29,27.46,rent,lunch
+2023-10-31,66.98,travel,groceries
+2024-06-09,5.30,gifts,groceries
+2023-05-03,76.45,utilities,jacket
+2023-10-24,65.41,rent,"flowers, paid by card"
+2024-06-03,501.92,entertainment,cinema
+2023-02-11,54.89,rent,concert
+2024-12-29,1328.97,household,groceries
+2023-06-29,13.95,subscriptions,birthday gift
+2023-03-09,42.15,gifts,books
+2024-10-16,158.04,rent,gym
+2023-07-10,536.67,health,shoes
+2023-01-05,22.66,transport,books
+2023-11-25,47.19,entertainment,monthly rent
+2024-05-21,27.89,food,jacket
+2023-08-18,811.91,food,lunch
+2024-12-16,1337.33,subscriptions,taxi
+2024-12-20,27.76,food,train to Bergen
+2024-05-20,35.98,clothing,electricity
+2023-08-21,1072.84,clothing,cinema
+2023-01-19,920.48,gifts,dinner with team
+2023-02-23,114.79,household,coffee
+2024-07-31,1315.04,food,streaming
+2024-11-27,922.14,food,books
+2023-07-11,6.02,utilities,electricity
+2024-02-11,47.04,food,flowers
+2024-11-25,38.16,subscriptions,monthly rent
+2024-06-16,2.79,entertainment,books
+2023-05-04,288.54,transport,taxi
+2023-06-01,163.26,subscriptions,birthday gift
+2023-03-31,954.14,subscriptions,jacket
+2023-07-26,122.71,subscriptions,groceries
+2023-11-14,688.80,clothing,shoes
+2023-12-28,286.58,travel,train to Bergen
+2023-08-10,19.14,subscriptions,books
+2023-03-05,31.99,gifts,jacket
+2024-11-24,63.27,rent,gym
+2024-09-17,1017.77,household,groceries
+2024-10-07,43.10,food,coffee
+2024-08-22,8.81,clothing,train to Bergen
+2024-09-13,258.47,household,books
+2024-02-05,32.52,household,groceries
+2023-11-04,644.99,clothing,shoes
+2023-12-05,256.15,utilities,coffee
+2023-01-11,91.83,gifts,birthday gift
+2024-03-23,164.83,travel,"books, paid by card"
+2024-11-23,1176.48,utilities,monthly rent
+2024-05-27,25.25,clothing,groceries
+2024-10-01,1191.58,transport,cinema
+2024-01-11,58.75,education,birthday gift
+2024-06-05,137.85,gifts,pharmacy
+2023-07-12,25.91,health,shoes
+2024-10-13,43.93,entertainment,course fee
+2023-01-05,55.19,education,lunch
+2024-05-24,1371.14,gifts,electricity
+2024-02-25,1018.42,transport,lunch
+2023-06-24,157.32,food,"flowers, paid by card"
+2024-08-15,20.72,food,train to Bergen
+2024-08-19,5.66,food,jacket
+2024-08-19,46.32,utilities,"jacket, paid by card"
+2024-08-24,108.14,entertainment,coffee
+2024-05-22,1177.28,household,shoes
+2023-11-13,25.12,transport,cinema
+2024-01-24,790.70,health,monthly rent
+2024-01-30,202.36,health,dentist
+2023-07-15,116.45,education,lunch
+2023-06-09,696.30,rent,dentist
+2023-09-03,118.82,education,shoes
+2024-05-02,31.28,household,train to Bergen
+2024-03-26,746.25,gifts,pharmacy
+2023-05-06,1351.86,clothing,lunch
+2024-08-04,1210.70,rent,jacket
+2024-11-09,1413.85,entertainment,pharmacy
+2023-11-15,100.80,entertainment,books
+2024-04-20,46.95,entertainment,"cinema, paid by card"
+2024-11-26,48.36,education,course fee
+2023-09-12,60.00,rent,birthday gift
+2024-09-15,44.58,subscriptions,cinema
+2023-11-07,1052.34,education,cinema
+2023-08-22,220.66,education,gym
+2023-01-01,8.49,subscriptions,flight
+2023-09-08,30.40,household,bus ticket
+2024-02-08,720.80,transport,books
+2024-03-10,1003.07,education,flowers
+2023-02-25,41.24,travel,"pharmacy, paid by card"
+2024-12-20,49.86,education,jacket
+2023-09-13,57.89,utilities,flowers
+2023-05-20,982.78,utilities,lunch
+2024-03-31,9.72,household,electricity
+2023-09-04,21.35,education,gym
+2024-04-17,706.33,entertainment,lunch
+2023-07-31,4.52,household,birthday gift
+2023-04-26,144.62,rent,dentist
+2023-01-12,985.52,household,streaming
+2024-07-31,200.63,utilities,dentist
+2024-01-03,1127.74,education,course fee
+2023-09-09,229.29,rent,birthday gift
+2024-10-15,32.48,household,birthday gift
+2023-12-01,24.00,health,electricity
+2024-01-14,50.59,subscriptions,flowers
+2024-12-23,34.15,travel,light bulbs
+2023-11-03,36.95,rent,electricity
+2024-02-16,7.20,utilities,light bulbs
+2023-02-02,259.49,rent,birthday gift
+2023-02-26,137.94,food,gym
+2023-06-30,66.05,subscriptions,gym
+2023-07-20,171.96,gifts,flowers
+2024-02-15,57.79,household,gym
+2024-11-05,179.92,education,flowers
+2023-12-18,32.76,education,light bulbs
+2023-03-29,182.14,health,concert
+2024-03-27,24.99,gifts,light bulbs
+2023-09-17,1170.24,travel,jacket
+2023-08-20,1235.59,subscriptions,bus ticket
+2024-11-26,1363.48,gifts,course fee
+2023-04-28,288.91,education,cleaning supplies
+2023-07-16,636.80,food,cleaning supplies
+2024-01-17,216.54,entertainment,monthly rent
+2024-03-12,54.70,subscriptions,monthly rent
+2023-12-30,841.40,education,lunch
+2023-05-06,163.69,household,"groceries, paid by card"
+2024-09-10,827.36,transport,dinner with team
+2024-11-22,16.06,subscriptions,taxi
+2023-01-22,30.31,gifts,birthday gift
+2024-11-16,1375.40,household,train to Bergen
+2023-01-15,298.46,food,dinner with team
+2024-09-27,210.26,rent,course fee
+2024-02-07,288.22,health,concert
+2023-05-15,32.22,household,taxi
+2024-04-24,505.99,travel,streaming
+2023-09-12,28.65,household,gym
+2024-01-29,762.07,subscriptions,concert
+2023-05-23,59.55,utilities,coffee
+2024-10-11,7.74,rent,gym
+2023-12-16,162.49,gifts,course fee
+2023-03-03,208.09,gifts,books
+2023-08-29,705.36,travel,cleaning supplies
+2024-08-05,46.80,entertainment,light bulbs
+2024-08-08,33.97,subscriptions,bus ticket
+2023-11-08,856.98,clothing,light bulbs
+2023-03-11,109.39,gifts,lunch
+2024-10-03,217.23,travel,pharmacy
+2023-10-17,696.71,food,electricity
+2023-03-23,1075.48,rent,lunch
+2024-07-03,39.26,utilities,streaming
+2023-01-28,133.49,rent,dinner with team
+2023-02-16,1275.96,clothing,train to Bergen
+2023-01-14,108.73,food,coffee
+2023-12-04,710.48,transport,books
+2024-03-09,21.96,education,flight
+2023-08-24,44.98,education,birthday gift
+2024-07-16,778.26,gifts,train to Bergen
+2023-01-10,47.94,rent,flowers
+2023-04-03,622.22,gifts,pharmacy
+2023-07-06,17.03,household,cinema
+2023-12-26,87.92,utilities,flowers
+2024-02-03,28.69,education,"light bulbs, paid by card"
+2024-10-22,54.99,subscriptions,cleaning supplies
+2024-01-20,195.59,food,train to Bergen
+2023-09-05,1259.17,entertainment,birthday gift
+2024-05-25,179.47,rent,birthday gift
+2023-12-06,264.19,education,flight
+2024-04-08,1282.17,health,dinner with team
+2024-03-25,261.91,education,lunch
+2023-06-05,58.51,gifts,light bulbs
+2023-06-22,914.20,education,course fee
+2023-12-10,734.61,household,"lunch, paid by card"
+2024-05-31,1198.42,food,dinner with team
+2023-11-21,5.74,gifts,"coffee, paid by card"
+2023-08-18,1238.21,transport,concert
+2024-05-23,57.52,household,bus ticket
+2023-07-01,2.88,gifts,dinner with team
+2024-07-23,57.21,education,taxi
+2024-07-15,1493.34,household,train to Bergen
+2023-11-22,127.23,clothing,electricity
+2024-10-12,190.19,household,flight
+2023-09-04,586.81,food,"course fee, paid by card"
+2024-12-11,942.43,health,taxi
+2023-01-01,201.25,subscriptions,dentist
+2023-08-29,241.58,household,bus ticket
+2024-06-22,17.45,education,dentist
+2024-09-19,1341.02,health,concert
+2024-08-07,1427.33,health,concert
+2023-06-23,672.35,travel,cinema
+2024-10-29,32.11,transport,coffee
+2023-09-15,1163.00,gifts,birthday gift
+2023-04-01,17.95,travel,flowers
+2023-06-28,61.97,travel,concert
+2024-09-29,23.50,gifts,"pharmacy, paid by card"
+2023-09-23,69.96,health,train to Bergen
+2024-03-24,7.30,rent,coffee
+2023-10-25,124.05,clothing,"books, paid by card"
+2023-10-30,140.67,health,jacket
+2024-08-15,1477.69,subscriptions,books
+2023-07-28,39.82,clothing,concert
+2024-10-20,27.17,travel,course fee
+2024-02-29,69.34,travel,electricity
+2023-01-10,40.88,education,birthday gift
+2024-02-01,46.65,subscriptions,lunch
+2023-04-01,954.28,utilities,course fee
+2023-02-26,33.92,clothing,dinner with team
+2023-05-30,20.59,gifts,train to Bergen
+2023-03-30,1358.88,clothing,concert
+2024-11-28,105.26,gifts,train to Bergen
+2023-05-15,170.32,education,groceries
+2023-05-25,700.27,gifts,gym
+2023-11-18,38.94,food,train to Bergen
+2024-03-25,1302.46,subscriptions,taxi
+2024-03-31,680.13,transport,dinner with team
+2023-03-15,514.19,gifts,light bulbs
+2024-05-25,14.81,gifts,cinema
+2023-07-31,31.94,food,coffee
+2023-09-21,42.96,household,"electricity, paid by card"
+2024-04-02,85.15,household,dentist
+2023-11-13,54.89,education,jacket
+2023-02-03,791.06,gifts,course fee
+2024-04-20,71.51,transport,dinner with team
+2023-05-06,1156.13,gifts,bus ticket
+2023-12-23,3.03,utilities,groceries
+2023-11-07,36.67,travel,train to Bergen
+2023-08-21,35.57,food,books
+2023-06-05,34.02,travel,jacket
+2024-01-08,12.37,household,dentist
+2024-07-18,8.55,food,dinner with team
+2023-04-10,215.02,transport,books
+2023-06-17,22.85,education,groceries
+2023-09-25,266.14,entertainment,dentist
+2023-11-29,1035.47,entertainment,books
+2023-10-18,25.42,household,dentist
+2023-04-08,988.40,subscriptions,pharmacy
+2023-08-23,7.05,clothing,cleaning supplies
+2023-04-23,584.33,utilities,jacket
+2024-06-09,745.75,health,"monthly rent, paid by card"
+2024-09-25,46.83,travel,shoes
+2023-01-12,20.41,transport,jacket
+2024-06-07,41.37,utilities,pharmacy
+2024-12-03,293.27,food,groceries
+2023-12-04,54.67,education,dinner with team
+2024-02-26,7.36,travel,gym
+2024-05-23,9.83,household,taxi
+2024-11-27,1325.17,entertainment,light bulbs
+2024-06-28,197.11,utilities,jacket
+2024-04-13,1075.00,household,dinner with team
+2024-02-09,211.20,clothing,bus ticket
+2024-11-19,115.09,entertainment,lunch
+2024-09-10,50.97,clothing,flight
+2023-05-30,79.82,subscriptions,dinner with team
+2023-04-01,72.44,education,dentist
+2023-05-04,14.55,clothing,train to Bergen
+2023-06-04,1389.86,clothing,birthday gift
+2024-06-02,47.86,clothing,"concert, paid by card"
+2023-06-29,1065.26,entertainment,light bulbs
+2023-04-14,1253.14,clothing,electricity
+2023-09-17,41.25,entertainment,birthday gift
+2024-11-08,1437.82,food,flowers
+2024-01-08,1375.22,transport,dentist
+2023-11-15,1228.86,travel,dinner with team
+2024-05-09,9.95,utilities,shoes
+2024-06-04,1247.37,entertainment,flowers
+2023-10-26,27.23,education,bus ticket
+2024-11-23,158.04,household,train to Bergen
+2024-08-11,30.75,utilities,concert
+2023-03-05,226.74,food,shoes
+2024-01-28,120.83,entertainment,groceries
+2023-11-25,132.86,clothing,streaming
+2024-04-28,77.11,gifts,coffee
+2023-11-19,1035.68,gifts,gym
+2023-03-20,1417.49,entertainment,flowers
+2024-04-05,1326.65,entertainment,books
+2024-01-04,569.87,transport,flight
+2024-02-27,50.40,education,cinema
+2024-10-11,903.83,health,cleaning supplies
+2023-12-11,1371.63,household,concert
+2023-10-23,114.84,transport,"concert, paid by card"
+2024-08-10,903.68,household,train to Bergen
+2024-11-26,651.16,utilities,concert
+2023-10-17,1320.98,clothing,birthday gift
+2024-12-22,1396.26,transport,flight
+2024-06-05,17.84,health,gym
+2023-03-22,215.84,utilities,lunch
+2023-05-23,1477.27,gifts,flight
+2023-02-10,150.92,education,streaming
+2024-06-27,34.97,entertainment,shoes
+2023-02-01,68.45,clothing,books
+2024-10-07,45.07,gifts,shoes
+2024-11-13,1304.17,health,gym
+2023-03-15,931.33,household,flight
+2023-12-16,37.71,transport,light bulbs
+2023-01-17,27.44,entertainment,pharmacy
+2024-12-19,50.60,household,light bulbs
+2023-01-17,513.01,household,light bulbs
+2023-09-28,195.72,health,birthday gift
+2023-06-29,529.38,travel,monthly rent
+2023-06-07,23.10,health,streaming
+2023-05-12,167.92,utilities,books
+2023-01-22,778.31,clothing,light bulbs
+2023-06-14,49.09,transport,pharmacy
+2024-06-28,23.98,travel,dinner with team
+2024-08-09,823.37,gifts,taxi
+2024-10-16,22.05,clothing,monthly rent
+2023-05-10,1072.06,education,course fee
+2023-03-11,35.07,clothing,flowers
+2024-12-31,220.71,subscriptions,electricity
+2024-05-24,36.75,food,cleaning supplies
+2023-08-18,38.77,utilities,"lunch, paid by card"
+2023-02-19,1459.46,food,dentist
+2024-02-28,17.25,household,monthly rent
+2024-06-25,163.40,food,bus ticket
+2024-07-23,1061.62,subscriptions,dentist
+2023-02-25,957.08,food,dentist
+2023-01-25,12.87,transport,course fee
+2023-08-01,40.96,gifts,concert
+2023-04-07,7.09,transport,books
+2023-11-13,61.39,utilities,lunch
+2023-02-14,1098.76,clothing,taxi
+2024-09-17,35.32,food,dinner with team
+2023-02-01,40.87,rent,flight
+2024-03-28,57.56,food,streaming
+2023-06-16,294.64,subscriptions,streaming
+2023-09-13,840.71,health,"streaming, paid by card"
+2023-09-02,53.61,food,streaming
+2023-12-12,23.29,utilities,concert
+2024-11-10,907.50,household,flowers
+2023-08-06,1385.66,entertainment,coffee
+2023-06-30,666.43,entertainment,cleaning supplies
+2023-09-21,1366.24,entertainment,flight
+2024-10-20,44.95,household,cleaning supplies
+2023-03-07,44.32,rent,dentist
+2024-05-20,162.88,rent,monthly rent

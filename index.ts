@@ -194,7 +194,8 @@ export default function (pi: ExtensionAPI) {
 				ledger.set(decision.id, decision);
 				persist(decision);
 				log({ event: "decision", id: decision.id, tool: m.toolName, bucket: decision.bucket, p: probs, tokens, ms: Date.now() - started, summary });
-				if (decision.durable) durableQueue.push({ source: "tool", text: `${summary}: ${truncate(output.replace(/\s+/g, " "), 200)}`, p: probs.durable, at: Date.now() });
+				// Tool output is rarely a durable fact by itself; only keep a pointer, and only when jev is very sure.
+				if (probs.durable > Math.max(cfg.durableAbove, 0.85)) durableQueue.push({ source: "tool", text: `${summary}${m.isError ? " failed" : " succeeded"}`, p: probs.durable, at: Date.now() });
 			})
 			.catch((err) => {
 				log({ event: "classify_error", id: m.toolCallId, error: String(err?.message ?? err) });

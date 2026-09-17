@@ -1,3 +1,4 @@
+import { normalizeCategory } from "./categories.js";
 import { parseAmount, parseDate } from "./parse.js";
 
 /** Split one CSV line, honouring double quotes. */
@@ -39,7 +40,7 @@ export function importCsv(text) {
 			errors.push({ line: i + 1, text: lines[i] });
 			continue;
 		}
-		entries.push({ date: d, cents, category, note: note || "" });
+		entries.push({ date: d, cents, category: normalizeCategory(category), note: note || "" });
 	}
 	return { entries, errors };
 }
