@@ -87,9 +87,49 @@ Cost units = uncached tokens + 0.1 × cached tokens (simulated prefix cache). je
 
 The replay makes the trade-off explicit on long sessions: rolling removes 19 % of input tokens but, with a 10× cache discount, costs 17 % *more* (cost units 85k vs 73k) because every prune rewrites the prefix. Budget removes 14 % for +4 %. Under this pricing, pruning after first send is a context-budget tool, not a cost tool. The cost win has to come from not sending things at all (pre-send compression) or from pruning only at moments the cache is cold anyway.
 
+## Pre-send compression (added later the same night)
+
+**Approach.** Large tool results (over 1200 estimated tokens) are intercepted in pi's `tool_result` hook before they are stored or sent. Code builds candidate views that are strict subsets of the output with line numbers (`outline`, `focus`, `signals`, `sample`, `head_tail`). jev answers a Choice over the views plus a Noul "will the next step need the exact full text"; full wins when either says so. For code, a second jev step asks, per top-level block, whether the agent will need its body, and those bodies are put back (`relevant` view). The full text stays in the result's `details` (persisted, never sent) and a `recall(id, lines?, pattern?)` tool serves it back. Every recall is logged as the signal that a view was too small. Two jev calls, about 700 ms each, only for large results.
+
+**Why this is the right place.** Everything sent once is cached at 10 % for the rest of the session, so post-send pruning can only fight over that 10 % and has to rewrite the prefix to do it. Not sending is free forever and leaves the prefix alone.
+
+**Offline check** (`eval/presend-replay.ts`, all 14 baseline sessions, jev deciding, then compared with what the agent actually did next):
+
+| large results | compressed | tokens (all) | tokens sent | saved | views | edit-miss / results later edited | quote-miss |
+|---|---|---|---|---|---|---|---|
+| 28 | 18 | 79.4k | 31.0k | 60.9 % | full:10, relevant:10, sample:6, head_tail:2 | 0 / 0 | 0 |
+
+An edit-miss would be an edit of that file whose old text is not in the view; a quote-miss a 40+ character span in the next assistant message that only exists in the omitted part. There were none. Typical choices: `data/sample.csv` 5.6k → 135 tokens (sample), `src/i18n.js` 1.5k → 81 (outline), `docs/DESIGN.md` kept full (jev put 0.4 to 0.6 on full: a prose design doc read to write an architecture doc), `src/categories.js` full when the task touched categories, outline otherwise.
+
+**Live runs** (`jev-presend`: pre-send on, post-send in budget mode; same tasks and model as above):
+
+| task | runs | passed | uncached input / run | cached / run | cache hit | final prompt / run | cost units / run | recalls |
+|---|---|---|---|---|---|---|---|---|
+| marathon, baseline | 3 | 3 | 52.9k | 200.2k | 79 % | 17.7k | 72.9k | 0 |
+| marathon, jev-presend | 3 | 3 | 51.4k | 157.7k | 75 % | 14.7k | 67.1k | 0 |
+| compound, baseline | 3 | 3 | 24.8k | 63.3k | 72 % | 7.0k | 31.1k | 0 |
+| compound, jev-presend | 3 | 3 | 27.9k | 69.3k | 71 % | 7.5k | 34.8k | 0 |
+| architecture-doc, jev-presend | 1 | 1 | 21.8k | 37.4k | 63 % | 16.3k | | 1 |
+
+Cost units = uncached + 0.1 × cached, from the provider's own counts. On the marathon, where large files get read, pre-send cut cached tokens 21 %, the final prompt 17 % and cost 8 %, with the same 3/3 pass rate, cache hit within noise of baseline, and zero recalls. Compound reads no large files, so the two are equal within run-to-run noise. Across all seven pre-send runs: 12 of 19 large results compressed, one recall (the agent asked for the full `i18n.js` while writing ARCHITECTURE.md; it then got it and passed).
+
+**Verdict: viable.** It is the first variant in this project that lowers cost without touching quality or the cache. The 8 % is bounded by how much of these small synthetic sessions is large tool output; in real sessions with long files, logs and search results the share is larger.
+
+**What to extend.** Views for `grep`/`find` output, diffs and build logs; pre-send on long user pastes; per-tool thresholds learned from recall rates; and combining with budget-mode pruning, which then only has small results left to decide about.
+
+## Procedural graph prototype (`eval/action-graph.ts`)
+
+Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
+
+| decision points | jev agrees with what the agent did | in passing runs | in failing runs | always-most-common-edge |
+|---|---|---|---|---|
+| 158 | 41 % | 41 % | 42 % | 49 % |
+
+Honest reading: as a next-step predictor with this crude state, jev is not better than edge frequency. Its disagreements are systematic and defensible (it wants `bash:test` where the agent wrote a test first, and `final_answer` where the agent kept editing), which is what a guidance model is for: flagging departures from the known-good path, not imitating the agent. The mined graph itself is already informative: after `edit:src`, passing runs go to `bash:test` 96 % of the time. The design for using it as deviation detection with a one-line nudge is in `docs/ideas.md`.
+
 ## What to try next
 
-1. **Pre-send judgment** for large tool results: ask jev whether the agent needs the full output before it is ever sent (mask install logs, huge listings, repeated test runs), with code-side head/tail masking. This is where the token savings are.
+1. **Pre-send judgment**: built, see above. Next are more view types and learned thresholds.
 2. **Two-turn evidence** before a forget: only forget once the agent has produced two later assistant messages without touching the item, or lower `JEV_MEMORY_FORGET_BELOW` to 0.15.
 3. **Run the replay harness on real, long pi sessions** from `~/.pi/agent/sessions` once there are some; every number above comes from synthetic tasks under 35 calls.
 4. Tune `JEV_MEMORY_BUDGET_FRACTION` (0.5 assumes about 18 more calls will follow; 0.25 assumes 36) or trigger on context percentage instead, so budget mode actually fires in hour-long sessions before compaction does.
