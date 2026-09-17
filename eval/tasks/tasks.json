@@ -1,0 +1,42 @@
+[
+  {
+    "id": "fix-date",
+    "prompt": "The test suite (npm test) has failing tests in tests/parse.test.js about parseDate. Find the root cause in the source, fix it, and make sure the whole suite passes. Do not modify the tests.",
+    "hidden": "fix-date.test.js"
+  },
+  {
+    "id": "money-rounding",
+    "prompt": "formatMoney in src/format.js is wrong: formatMoney(1234) must return \"12.34\", formatMoney(5) must return \"0.05\", formatMoney(-250) must return \"-2.50\" and formatMoney(100000) must return \"1000.00\". Fix it so it always renders exactly two decimals, add tests in tests/format.test.js, and make sure npm test passes.",
+    "hidden": "money-rounding.test.js"
+  },
+  {
+    "id": "csv-export",
+    "prompt": "Add an exportCsv(ledger) function to src/csv.js that returns CSV text with the header line date,amount,category,note followed by one line per entry in ledger.list() order, with amount formatted via formatMoney and any field containing a comma, a double quote or a newline wrapped in double quotes with inner quotes doubled. Export it, add tests, and make sure npm test passes.",
+    "hidden": "csv-export.test.js"
+  },
+  {
+    "id": "rename-total",
+    "prompt": "Rename the Ledger method total() to sum() across the codebase (src, tests, README). Keep total() as a deprecated alias that calls sum() so old callers still work. Make sure npm test passes.",
+    "hidden": "rename-total.test.js"
+  },
+  {
+    "id": "add-perf",
+    "prompt": "Ledger.add in src/ledger.js scans all existing entries on every insert, so importing many entries is quadratic. Make add O(1) amortized while still rejecting duplicates by the same key, keep all existing behaviour, and add a test in tests/perf.test.js that adds 50000 distinct entries and asserts it finishes in under 2 seconds. Make sure npm test passes.",
+    "hidden": "add-perf.test.js"
+  },
+  {
+    "id": "validation",
+    "prompt": "Ledger.add currently accepts invalid entries. Make it throw a TypeError when entry.date is not a valid Date, entry.cents is not a finite integer, or entry.category is not a non-empty string. Note may be omitted. Add tests in tests/validation.test.js and make sure npm test passes.",
+    "hidden": "validation.test.js"
+  },
+  {
+    "id": "architecture-doc",
+    "prompt": "Read the whole codebase and write ARCHITECTURE.md describing every module in src/, the data model of a ledger entry, how data flows from a CSV file to a report, and how to run the tests. Do not change any code.",
+    "hidden": "architecture-doc.test.js"
+  },
+  {
+    "id": "config-loader",
+    "prompt": "Add src/config.js exporting loadConfig(path) that reads a JSON file with optional keys currency (default \"USD\") and locale (default \"en-US\") and returns { currency, locale }; a missing file returns the defaults. Then make formatMoney(cents, config) in src/format.js accept an optional config and, when given, format using Intl.NumberFormat with that locale and currency. Without config it must keep returning plain two-decimal strings like \"12.34\". Add tests and make sure npm test passes.",
+    "hidden": "config-loader.test.js"
+  }
+]
