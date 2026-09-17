@@ -10,7 +10,28 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that routes conversa
 | **forget** | replaced by a one-line stub; re-run the tool to get it back | the prompt |
 | **file** (durable) | appended to `<project>/.pi/jev-memory.md`, injected into the system prompt at the next session start | long-term memory |
 
-The point is not just to shrink the prompt. It is to shrink it **without breaking the provider's prompt cache**.
+The point is not just to shrink the prompt. It is to shrink it **without breaking the provider's prompt cache**, and,
+since everything sent once is cached cheaply afterwards, to decide *before first send* how much of a large output to send.
+
+## Pre-send compression (the cost lever)
+
+Large tool results (default: over 1200 estimated tokens) never reach the prompt verbatim by default. In pi's `tool_result`
+hook, code builds candidate **views** that are strict subsets of the output, with line numbers:
+
+| view | for | keeps |
+|---|---|---|
+| `outline` | code, prose | imports, exports, signatures, headings, doc comments |
+| `relevant` | code | outline plus the full bodies of the blocks jev says the agent will need (second jev step) |
+| `focus` | anything | lines mentioning identifiers from the task and the tool call, with context |
+| `signals` | command output | errors, warnings, failing tests, summary lines, the tail |
+| `sample` | tabular or log-like data | header, a dozen rows, the count |
+| `head_tail` | anything | first and last lines |
+
+jev answers two questions over the task, the agent's reasoning before the call, and a preview of each view: *which view
+is the smallest that still suffices* (Choice) and *will the next step need the exact full text* (Noul). Full wins on any
+doubt. The full output is kept in the result's `details` (persisted in the session, never sent) and served by a `recall`
+tool the agent can call with an id, a line range or a pattern. Every recall is logged: it is the signal that a view was
+too small. Set `JEV_MEMORY_PRESEND=0` to turn this off.
 
 ## The cache-aware cut
 
@@ -56,6 +77,10 @@ Inside pi: `/jev-memory` shows stats, `/jev-memory decisions` lists every decisi
 | `JEV_MEMORY_CLASSIFY_WAIT_MS` | `2500` | how long the context hook waits for in-flight jev calls |
 | `JEV_MEMORY_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
 | `JEV_MEMORY_DISABLED` | unset | `1` = classify and log, but never prune (shadow mode) |
+| `JEV_MEMORY_PRESEND` | `1` | `0` turns pre-send compression off |
+| `JEV_MEMORY_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
+| `JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
+| `JEV_MEMORY_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
 
 ## How jev is used
 
@@ -69,7 +94,9 @@ memory lines) is assembled by code from the original content, so nothing is hall
 
 ```sh
 npm test                                      # unit tests for the policy, ledger and memory file
-node --import tsx eval/replay.ts <session.jsonl|dir>   # offline: classify a recorded session, simulate the policy
+node --import tsx eval/replay.ts <session.jsonl|dir>   # offline: classify a recorded session, simulate post-send pruning
+node --import tsx eval/presend-replay.ts <dir>          # offline: pre-send views vs what the agent did next (edit/quote misses)
+node --import tsx eval/action-graph.ts                  # procedural graph mined from runs, jev as guidance model
 node --import tsx eval/generate.ts --cond baseline     # run the fixture tasks with pi headless
 node --import tsx eval/generate.ts --cond jev
 node --import tsx eval/report.ts                       # compare conditions
