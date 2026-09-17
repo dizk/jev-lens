@@ -53,8 +53,8 @@ function sh(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.Proce
 
 export interface RunResult {
 	cond: string; task: string; n: number; ok: boolean; testExit: number | null; timedOut: boolean; wallMs: number;
-	calls: number; input: number; cacheRead: number; output: number; toolCalls: number; cacheHit: number; finalPrompt: number;
-	pruned?: number; decisions?: number; sessionFile?: string; dir: string;
+	calls: number; input: number; cacheRead: number; output: number; toolCalls: number; cacheHit: number; finalPrompt: number; recalls: number;
+	pruned?: number; decisions?: number; presend?: { considered: number; compressed: number; tokensBefore: number }; sessionFile?: string; dir: string;
 }
 
 async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Promise<RunResult> {
@@ -68,7 +68,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	if (args.cond.startsWith("jev")) piArgs.unshift("-e", join(ROOT, "index.ts"));
 	piArgs.push(task.prompt);
 	const t0 = Date.now();
-	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_MEMORY_MODE: args.mode } });
+	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_MEMORY_MODE: args.mode, JEV_MEMORY_PRESEND: args.cond.includes("presend") ? "1" : "0" } });
 	const wallMs = Date.now() - t0;
 	writeFileSync(join(dir, "pi.stderr"), r.err);
 
@@ -78,7 +78,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	writeFileSync(join(dir, "test.out"), t.out + "\n" + t.err);
 
 	// Usage from the event stream.
-	let calls = 0, input = 0, cacheRead = 0, output = 0, toolCalls = 0, finalPrompt = 0;
+	let calls = 0, input = 0, cacheRead = 0, output = 0, toolCalls = 0, finalPrompt = 0, recalls = 0;
 	const events = existsSync(join(dir, "events.jsonl")) ? readFileSync(join(dir, "events.jsonl"), "utf8").split("\n") : [];
 	for (const line of events) {
 		if (!line.trim()) continue;
@@ -91,10 +91,11 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 		output += e.message.usage?.output ?? 0;
 		finalPrompt = (e.message.usage?.input ?? 0) + (e.message.usage?.cacheRead ?? 0);
 		toolCalls += (e.message.content ?? []).filter((c) => c.type === "toolCall").length;
+		recalls += (e.message.content ?? []).filter((c) => c.type === "toolCall" && (c as { name?: string }).name === "recall").length;
 	}
 	const result: RunResult = {
 		cond: args.cond, task: task.id, n, ok: !r.timedOut && t.code === 0, testExit: t.code, timedOut: r.timedOut, wallMs,
-		calls, input, cacheRead, output, toolCalls, cacheHit: input + cacheRead > 0 ? cacheRead / (input + cacheRead) : 0, finalPrompt, dir,
+		calls, input, cacheRead, output, toolCalls, cacheHit: input + cacheRead > 0 ? cacheRead / (input + cacheRead) : 0, finalPrompt, recalls, dir,
 	};
 	const logPath = join(work, ".pi", "jev-memory.log");
 	if (existsSync(logPath)) {
@@ -109,6 +110,15 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 		}
 		result.pruned = pruned;
 		result.decisions = decisions;
+		let presendSaved = 0, presendCompressed = 0, presendConsidered = 0;
+		for (const line of readFileSync(logPath, "utf8").split("\n")) {
+			if (!line.trim()) continue;
+			try {
+				const e = JSON.parse(line);
+				if (e.event === "presend") { presendConsidered++; if (e.view && e.view !== "full") { presendCompressed++; presendSaved += e.tokens ?? 0; } }
+			} catch {}
+		}
+		result.presend = { considered: presendConsidered, compressed: presendCompressed, tokensBefore: presendSaved };
 	}
 	const sessionFiles = existsSync(sessions) ? (readdirSync(sessions, { recursive: true }) as string[]).filter((f) => f.endsWith(".jsonl")).map((f) => join(sessions, f)) : [];
 	if (sessionFiles.length) result.sessionFile = sessionFiles[0];
@@ -129,7 +139,7 @@ async function main() {
 			console.error(`[${args.cond}] start ${job.task.id}-${job.n}`);
 			const r = await runOne(job.task, job.n, args);
 			results.push(r);
-			console.error(`[${args.cond}] done  ${job.task.id}-${job.n} ok=${r.ok} calls=${r.calls} input=${r.input} cacheRead=${r.cacheRead} hit=${(100 * r.cacheHit).toFixed(0)}% wall=${Math.round(r.wallMs / 1000)}s${r.pruned !== undefined ? ` pruned=${r.pruned}` : ""}`);
+			console.error(`[${args.cond}] done  ${job.task.id}-${job.n} ok=${r.ok} calls=${r.calls} input=${r.input} cacheRead=${r.cacheRead} hit=${(100 * r.cacheHit).toFixed(0)}% wall=${Math.round(r.wallMs / 1000)}s${r.pruned !== undefined ? ` pruned=${r.pruned}` : ""}${r.presend ? ` presend=${r.presend.compressed}/${r.presend.considered}` : ""} recalls=${r.recalls}`);
 		}
 	};
 	await Promise.all(Array.from({ length: Math.max(1, args.parallel) }, worker));

@@ -18,7 +18,11 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "./src/pi-types.ts";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
+import { buildPresendState, decideView, JevPresend, MockPresend, type PresendClassifier } from "./src/presend.ts";
+import { buildCandidates, extractTerms, footer } from "./src/views.ts";
 import { loadConfig, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { appendNotes, memoryPromptSection, readMemoryFile } from "./src/memory-file.ts";
@@ -35,6 +39,11 @@ export default function (pi: ExtensionAPI) {
 	const cfg: Config = loadConfig();
 	const usingMock = cfg.forceMock || !cfg.apiKey;
 	const classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
+	const presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model);
+	/** Full text of compressed tool results, by toolCallId, for the recall tool (also persisted in result details). */
+	const fullOutputs = new Map<string, { text: string; toolName: string; args: unknown; view: string }>();
+	let lastAssistantText = "";
+	let presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
 
 	let ledger = new Map<string, Decision>();
 	/** Classifications launched but not yet resolved, keyed by toolCallId. */
@@ -63,7 +72,7 @@ export default function (pi: ExtensionAPI) {
 	const status = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 		const tag = usingMock ? "jev-memory(mock)" : "jev-memory";
-		ctx.ui.setStatus("jev-memory", `${tag} −${(totals.pruned / 1000).toFixed(1)}k tok, ${totals.applied} pruned, ${totals.notes} notes`);
+		ctx.ui.setStatus("jev-memory", `${tag} presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k (${presendTotals.compressed}/${presendTotals.considered}, ${presendTotals.recalls} recalls), pruned −${(totals.pruned / 1000).toFixed(1)}k (${totals.applied}), ${totals.notes} notes`);
 	};
 
 	const persist = (d: Decision) => pi.appendEntry(ENTRY_TYPE, { kind: "decision", decision: { ...d } });
@@ -80,6 +89,8 @@ export default function (pi: ExtensionAPI) {
 		totals = { pruned: 0, applied: 0, notes: 0, calls: 0, cacheRead: 0, input: 0 };
 		firstUser = "";
 		latestUser = "";
+		fullOutputs.clear();
+		presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
 		memoryPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-memory.md");
 		memorySnapshot = readMemoryFile(memoryPath);
 		try {
@@ -89,10 +100,14 @@ export default function (pi: ExtensionAPI) {
 			logPath = "";
 		}
 		for (const entry of ctx.sessionManager.getBranch()) {
-			if (entry.type === "message" && entry.message.role === "user") {
+			if (entry.type !== "message") continue;
+			if (entry.message.role === "user") {
 				const t = contentText(entry.message.content);
 				if (!firstUser) firstUser = t;
 				latestUser = t;
+			} else if (entry.message.role === "toolResult") {
+				const d = (entry.message as { details?: { jevMemory?: { full?: string; view?: string; args?: unknown } } }).details?.jevMemory;
+				if (d?.full) fullOutputs.set(entry.message.toolCallId, { text: d.full, toolName: entry.message.toolName, args: d.args, view: d.view ?? "?" });
 			}
 		}
 		log({ event: "session_start", mode: cfg.mode, enabled: cfg.enabled, mock: usingMock, ledger: ledger.size });
@@ -131,6 +146,7 @@ export default function (pi: ExtensionAPI) {
 		if (m.role !== "assistant" || m.stopReason === "error" || m.stopReason === "aborted") return;
 		// The assistant has now reacted to the previous turn's tool results: classify them.
 		const afterText = contentText(m.content);
+		lastAssistantText = afterText;
 		const afterCalls = toolCallsOf(m);
 		for (const c of m.content) if (c.type === "toolCall") argsById.set(c.id, c.arguments);
 		const toClassify = buffer;
@@ -290,6 +306,80 @@ export default function (pi: ExtensionAPI) {
 		flushDurable();
 	});
 
+	// ---- pre-send compression: pick a view of a large tool result before it is ever sent ----
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (!cfg.presend || !cfg.enabled) return;
+		if (event.toolName === "recall") return;
+		const text = contentText(event.content);
+		const tokens = estimateTokensOfText(text);
+		if (tokens < cfg.presendMinTokens) return;
+		if (event.content.some((c) => c.type === "image")) return;
+		presendTotals.considered++;
+		const started = Date.now();
+		const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
+		const cands = buildCandidates(event.toolName, event.input, text, terms);
+		if (cands.views.length < 2) {
+			log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
+			return;
+		}
+		const totalLines = text.split("\n").length;
+		const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistantText, toolName: event.toolName, args: event.input, isError: event.isError, cands, totalLines, totalChars: text.length });
+		try {
+			const answer = await presend.choose(state, cands.views.map((v) => v.kind), ctx.signal);
+			const view = decideView(answer, cands, cfg);
+			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
+			if (view.kind === "full") return;
+			presendTotals.compressed++;
+			presendTotals.tokensSaved += tokens - estimateTokensOfText(view.text);
+			fullOutputs.set(event.toolCallId, { text, toolName: event.toolName, args: event.input, view: view.kind });
+			const details = { ...((event.details as object) ?? {}), jevMemory: { full: text, view: view.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull } };
+			status(ctx);
+			return { content: [{ type: "text", text: view.text + footer(view, event.toolCallId, totalLines) }], details };
+		} catch (err) {
+			log({ event: "presend_error", id: event.toolCallId, error: String((err as Error)?.message ?? err) });
+			return;
+		}
+	});
+
+	pi.registerTool({
+		name: "recall",
+		label: "Recall",
+		description: "Return the full output of an earlier tool call that jev-memory showed in a reduced view (or that was pruned). Pass the id from the [jev-memory: ...] note. Optionally restrict to a line range \"a-b\" or to lines matching a pattern (case-insensitive substring or /regex/).",
+		parameters: Type.Object({
+			id: Type.String({ description: "toolCallId from the jev-memory note" }),
+			lines: Type.Optional(Type.String({ description: "Line range like 120-180 (1-based, inclusive)" })),
+			pattern: Type.Optional(Type.String({ description: "Only lines matching this substring or /regex/, with 2 lines of context" })),
+		}),
+		async execute(_toolCallId, params) {
+			presendTotals.recalls++;
+			const hit = fullOutputs.get(params.id);
+			log({ event: "recall", id: params.id, found: !!hit, lines: params.lines, pattern: params.pattern });
+			if (!hit) return { content: [{ type: "text", text: `No stored output for id ${params.id}. Re-run the original tool instead.` }], details: { id: params.id, lines: 0 } };
+			const all = hit.text.split("\n");
+			let idx = all.map((_, i) => i);
+			if (params.lines) {
+				const m = params.lines.match(/^(\d+)\s*-\s*(\d+)$/);
+				if (!m) return { content: [{ type: "text", text: "lines must look like 120-180" }], details: { id: params.id, lines: 0 } };
+				const a = Math.max(1, Number(m[1])), b = Math.min(all.length, Number(m[2]));
+				idx = idx.filter((i) => i + 1 >= a && i + 1 <= b);
+			}
+			if (params.pattern) {
+				let test: (l: string) => boolean;
+				const rx = params.pattern.match(/^\/(.*)\/([a-z]*)$/);
+				if (rx) { const re = new RegExp(rx[1], rx[2].includes("i") ? rx[2] : rx[2] + "i"); test = (l) => re.test(l); }
+				else { const needle = params.pattern.toLowerCase(); test = (l) => l.toLowerCase().includes(needle); }
+				const keep = new Set<number>();
+				for (const i of idx) if (test(all[i])) for (let j = Math.max(0, i - 2); j <= Math.min(all.length - 1, i + 2); j++) keep.add(j);
+				idx = idx.filter((i) => keep.has(i));
+			}
+			const width = String(all.length).length;
+			const body = idx.length === all.length ? hit.text : idx.map((i) => `${String(i + 1).padStart(width)}│ ${all[i]}`).join("\n");
+			const header = idx.length === all.length ? "" : `[${idx.length} of ${all.length} lines from ${hit.toolName} ${truncate(JSON.stringify(hit.args ?? {}), 80)}]\n`;
+			return { content: [{ type: "text", text: header + body }], details: { id: params.id, lines: idx.length } };
+		},
+	});
+
 	// ---- commands ----------------------------------------------------------------------
 
 	pi.registerCommand("jev-memory", {
@@ -310,7 +400,8 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(
 				[
 					`mode=${cfg.mode} enabled=${cfg.enabled} classifier=${usingMock ? "mock" : cfg.model}`,
-					`calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
+					`presend: ${presendTotals.compressed}/${presendTotals.considered} large results compressed, ≈${presendTotals.tokensSaved} tokens saved, ${presendTotals.recalls} recalls`,
+					`post-send: calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
 					`cache: read=${totals.cacheRead} uncached=${totals.input} hit=${hit}%`,
 					`memory file: ${memoryPath} (+${totals.notes} notes this session)`,
 				].join("\n"),

@@ -1,0 +1,186 @@
+/**
+ * Candidate views of a tool result. Every view is a deterministic subset of the original
+ * text (never generated), with line numbers so the agent can ask for exact ranges later.
+ */
+
+export type ViewKind = "full" | "outline" | "focus" | "signals" | "sample" | "head_tail";
+
+export interface View {
+	kind: ViewKind;
+	text: string;
+	lines: number;
+	chars: number;
+	/** 1-based line numbers of the original that are included. */
+	included: number[];
+}
+
+export type ContentKind = "code" | "data" | "prose" | "command" | "listing";
+
+const CODE_EXT = /\.(js|mjs|cjs|ts|tsx|jsx|py|go|rs|java|kt|kts|rb|php|c|h|cc|cpp|hpp|cs|swift|scala|sh|bash|zsh|lua|sql)$/i;
+const DATA_EXT = /\.(csv|tsv|jsonl|ndjson|log|json|xml|yaml|yml|toml)$/i;
+const PROSE_EXT = /\.(md|txt|rst|adoc)$/i;
+
+/** Guess what kind of content this is from the tool, its arguments and the text itself. */
+export function detectKind(toolName: string, args: unknown, text: string): ContentKind {
+	const a = (args ?? {}) as Record<string, unknown>;
+	const path = typeof a.path === "string" ? a.path : "";
+	if (toolName === "bash" || toolName === "powershell") return "command";
+	if (toolName === "ls" || toolName === "find" || toolName === "grep") return "listing";
+	if (CODE_EXT.test(path)) return "code";
+	if (DATA_EXT.test(path)) return "data";
+	if (PROSE_EXT.test(path)) return "prose";
+	if (looksRepetitive(text)) return "data";
+	if (SIG_RE.test(text)) return "code";
+	return "prose";
+}
+
+/** Many lines with the same delimiter count → tabular or log-like data. */
+export function looksRepetitive(text: string): boolean {
+	const lines = text.split("\n").filter((l) => l.trim()).slice(0, 200);
+	if (lines.length < 20) return false;
+	const counts = new Map<string, number>();
+	for (const l of lines) {
+		const sig = `${(l.match(/,/g) || []).length}|${(l.match(/\t/g) || []).length}|${(l.match(/\|/g) || []).length}`;
+		counts.set(sig, (counts.get(sig) || 0) + 1);
+	}
+	const top = Math.max(...counts.values());
+	return top / lines.length > 0.7 && !/^[\s]*[,|\t]*$/.test(lines[0]) && lines[0].length > 0 && (lines[0].includes(",") || lines[0].includes("\t") || lines[0].includes("|"));
+}
+
+const SIG_RE = /^\s*(export\s+|pub\s+|public\s+|private\s+|protected\s+|static\s+|async\s+|default\s+)*(function|class|interface|type|enum|struct|impl|trait|fn|def|const|let|var|module|namespace|import|from|require|package|use)\b|^\s*(export\s+)?(async\s+)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{?\s*$|^\s*(get|set)\s+\w+\s*\(|^\s*(\w+)\s*[:=]\s*(async\s*)?(\([^)]*\)|\w+)\s*=>|^\s*@\w+|^\s*#\s|^\s*\/\*\*|^\s*\*\/|^[A-Za-z_][\w]*\s*=\s*(function|class|\(|require)/;
+const HEADING_RE = /^\s*(#{1,6}\s|=+\s*$|-+\s*$|\d+\.\s+[A-Z])/;
+const SIGNAL_RE = /\b(error|fail(ed|ing|ure)?|exception|traceback|panic|fatal|warn(ing)?|not ok|✖|✗|denied|refused|missing|cannot|undefined is not|is not defined|no such file|ENOENT|EACCES|timeout|timed out|assert|expected|actual)\b|^\s*at\s+\S+\s+\(|^ℹ\s|^#\s(pass|fail|tests)|failing|Tests:|Suites:|\d+\s+(passed|failed)/i;
+
+function numbered(lines: string[], idx: number[]): string {
+	const width = String(lines.length).length;
+	const out: string[] = [];
+	let prev = -1;
+	for (const i of idx) {
+		if (prev >= 0 && i > prev + 1) out.push(`${" ".repeat(width)}  ⋯ ${i - prev - 1} lines omitted`);
+		out.push(`${String(i + 1).padStart(width)}│ ${lines[i]}`);
+		prev = i;
+	}
+	if (prev >= 0 && prev < lines.length - 1) out.push(`${" ".repeat(width)}  ⋯ ${lines.length - 1 - prev} lines omitted`);
+	return out.join("\n");
+}
+
+function withContext(lines: string[], hits: Set<number>, ctx: number): number[] {
+	const keep = new Set<number>();
+	for (const h of hits) for (let i = Math.max(0, h - ctx); i <= Math.min(lines.length - 1, h + ctx); i++) keep.add(i);
+	return [...keep].sort((a, b) => a - b);
+}
+
+function make(kind: ViewKind, lines: string[], idx: number[]): View {
+	const text = numbered(lines, idx);
+	return { kind, text, lines: idx.length, chars: text.length, included: idx.map((i) => i + 1) };
+}
+
+export function fullView(text: string): View {
+	const lines = text.split("\n");
+	return { kind: "full", text, lines: lines.length, chars: text.length, included: lines.map((_, i) => i + 1) };
+}
+
+export function headTailView(text: string, head = 40, tail = 20): View {
+	const lines = text.split("\n");
+	if (lines.length <= head + tail + 5) return fullView(text);
+	const idx = [...Array.from({ length: head }, (_, i) => i), ...Array.from({ length: tail }, (_, i) => lines.length - tail + i)];
+	return make("head_tail", lines, idx);
+}
+
+/** Code and prose structure: signatures, exports, imports, doc comments, headings. */
+export function outlineView(text: string, kind: ContentKind): View {
+	const lines = text.split("\n");
+	const hits = new Set<number>();
+	const re = kind === "prose" ? HEADING_RE : SIG_RE;
+	for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) hits.add(i);
+	if (kind === "prose") for (let i = 0; i < lines.length; i++) if (hits.has(i) && i + 1 < lines.length && lines[i + 1].trim()) hits.add(i + 1);
+	if (hits.size < 3) return headTailView(text);
+	return make("outline", lines, withContext(lines, hits, 0));
+}
+
+/** Lines mentioning any of the given terms, with context. */
+export function focusView(text: string, terms: string[], ctx = 3): View | undefined {
+	const t = terms.map((x) => x.trim()).filter((x) => x.length >= 3);
+	if (t.length === 0) return undefined;
+	const lines = text.split("\n");
+	const hits = new Set<number>();
+	const lowered = t.map((x) => x.toLowerCase());
+	for (let i = 0; i < lines.length; i++) {
+		const l = lines[i].toLowerCase();
+		if (lowered.some((x) => l.includes(x))) hits.add(i);
+	}
+	if (hits.size === 0) return undefined;
+	const idx = withContext(lines, hits, ctx);
+	if (idx.length >= lines.length * 0.8) return undefined;
+	return make("focus", lines, idx);
+}
+
+/** Command output: error/warning/summary lines with context, plus the tail. */
+export function signalsView(text: string, ctx = 2, tail = 8): View {
+	const lines = text.split("\n");
+	const hits = new Set<number>();
+	for (let i = 0; i < lines.length; i++) if (SIGNAL_RE.test(lines[i])) hits.add(i);
+	for (let i = Math.max(0, lines.length - tail); i < lines.length; i++) hits.add(i);
+	const idx = withContext(lines, hits, ctx);
+	if (idx.length >= lines.length * 0.8) return fullView(text);
+	return make("signals", lines, idx);
+}
+
+/** Data files: header plus a sample of rows and the count. */
+export function sampleView(text: string, rows = 12): View {
+	const lines = text.split("\n");
+	if (lines.length <= rows + 6) return fullView(text);
+	const idx = [...Array.from({ length: rows }, (_, i) => i), lines.length - 2, lines.length - 1].filter((i, k, arr) => i >= 0 && arr.indexOf(i) === k);
+	return make("sample", lines, idx);
+}
+
+/** Pull identifier-like terms out of task text and tool arguments to drive the focus view. */
+export function extractTerms(...texts: string[]): string[] {
+	const found = new Map<string, number>();
+	for (const t of texts) {
+		for (const m of t.matchAll(/[A-Za-z_$][A-Za-z0-9_$]{3,}/g)) {
+			const w = m[0];
+			if (STOP.has(w.toLowerCase())) continue;
+			if (/^[A-Z][a-z]+$/.test(w) && w.length < 8) continue; // capitalised common words
+			found.set(w, (found.get(w) || 0) + 1);
+		}
+		for (const m of t.matchAll(/`([^`\n]{3,60})`/g)) found.set(m[1], (found.get(m[1]) || 0) + 3);
+		for (const m of t.matchAll(/["']([^"'\n]{4,60})["']/g)) found.set(m[1], (found.get(m[1]) || 0) + 2);
+	}
+	return [...found.entries()]
+		.filter(([w]) => /[a-z]/.test(w) && (/[A-Z_.$]/.test(w.slice(1)) || w.length >= 8))
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 25)
+		.map(([w]) => w);
+}
+
+const STOP = new Set("this that with from have will would should could there their about which where when what make sure does into then than only also just some more most such each other after before because while please tests test file files function functions module modules code change changes changed running return returns using used uses need needs needed does must keep keeps always never every existing behaviour behavior following current update updated added adding delete remove rename renamed read write import export const class type string number object array value values default defaults lines line".split(/\s+/));
+
+export interface Candidates {
+	kind: ContentKind;
+	views: View[];
+}
+
+/** Build the candidate views for a tool result. Full is always first. Views that do not shrink the text enough are dropped. */
+export function buildCandidates(toolName: string, args: unknown, text: string, terms: string[], minShrink = 0.6): Candidates {
+	const kind = detectKind(toolName, args, text);
+	const full = fullView(text);
+	const cands: View[] = [full];
+	const add = (v: View | undefined) => {
+		if (!v || v.kind === "full") return;
+		if (v.chars > full.chars * minShrink) return;
+		if (cands.some((c) => c.kind === v.kind)) return;
+		cands.push(v);
+	};
+	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
+	if (kind === "command" || kind === "listing") add(signalsView(text));
+	if (kind === "data") add(sampleView(text));
+	add(focusView(text, terms));
+	add(headTailView(text));
+	return { kind, views: cands };
+}
+
+export function footer(view: View, toolCallId: string, total: number): string {
+	if (view.kind === "full") return "";
+	return `\n\n[jev-memory: showing the "${view.kind}" view, ${view.lines} of ${total} lines. Omitted lines are marked ⋯. Call recall(id: "${toolCallId}") for the full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.]`;
+}

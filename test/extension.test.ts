@@ -16,7 +16,9 @@ function fakePi() {
 	const handlers = new Map<string, Handler[]>();
 	const entries: any[] = [];
 	const commands = new Map<string, any>();
+	const tools = new Map<string, any>();
 	const pi = {
+		registerTool: (def: any) => tools.set(def.name, def),
 		on: (event: string, h: Handler) => handlers.set(event, [...(handlers.get(event) ?? []), h]),
 		appendEntry: (customType: string, data: any) => entries.push({ type: "custom", customType, data }),
 		registerCommand: (name: string, def: any) => commands.set(name, def),
@@ -26,7 +28,7 @@ function fakePi() {
 		for (const h of handlers.get(event) ?? []) result = (await h({ type: event, ...payload }, ctx)) ?? result;
 		return result;
 	};
-	return { pi, emit, entries, commands };
+	return { pi, emit, entries, commands, tools };
 }
 
 function ctxFor(cwd: string, entries: any[]) {
@@ -113,5 +115,48 @@ describe("extension wiring (mock classifier, rolling mode)", () => {
 		await emit("session_start", { reason: "resume" }, ctx);
 		const r = await emit("context", { messages: [user("hi"), assistant("r", [{ id: "c9", name: "read", arguments: {} }]), toolResult("c9", big)] }, ctx);
 		expect((r.messages[2] as any).content[0].text).toContain("read old.txt");
+	});
+});
+
+describe("pre-send compression and recall (mock)", () => {
+	it("replaces a large code read with an outline, stores the full text, and recall serves slices", async () => {
+		const mod: any = await import("../index.ts");
+		const { pi, emit, entries, tools } = fakePi();
+		mod.default(pi);
+		const cwd = mkdtempSync(join(tmpdir(), "jevext-"));
+		const ctx = ctxFor(cwd, entries);
+		await emit("session_start", { reason: "startup" }, ctx);
+		const { readFileSync } = await import("node:fs");
+		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const r = await emit("tool_result", { toolName: "read", toolCallId: "c7", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], details: undefined, isError: false }, ctx);
+		expect(r).toBeDefined();
+		const sent = r.content[0].text as string;
+		expect(sent.length).toBeLessThan(code.length * 0.6);
+		expect(sent).toContain("export function normalizeCategory");
+		expect(sent).toContain('recall(id: "c7")');
+		expect(r.details.jevMemory.full).toBe(code);
+		expect(r.details.jevMemory.view).toBe("outline");
+
+		const recall = tools.get("recall");
+		expect(recall).toBeDefined();
+		const full = await recall.execute("x", { id: "c7" });
+		expect(full.content[0].text).toBe(code);
+		const slice = await recall.execute("x", { id: "c7", lines: "1-3" });
+		expect(slice.content[0].text).toContain("1│ /**");
+		expect(slice.details.lines).toBe(3);
+		const grep = await recall.execute("x", { id: "c7", pattern: "sectionOf" });
+		expect(grep.content[0].text).toContain("export function sectionOf");
+		const missing = await recall.execute("x", { id: "nope" });
+		expect(missing.content[0].text).toContain("No stored output");
+	});
+
+	it("leaves small results and recall results alone", async () => {
+		const mod: any = await import("../index.ts");
+		const { pi, emit, entries } = fakePi();
+		mod.default(pi);
+		const ctx = ctxFor(mkdtempSync(join(tmpdir(), "jevext-")), entries);
+		await emit("session_start", { reason: "startup" }, ctx);
+		expect(await emit("tool_result", { toolName: "read", toolCallId: "s", input: { path: "a.js" }, content: [{ type: "text", text: "short" }], isError: false }, ctx)).toBeUndefined();
+		expect(await emit("tool_result", { toolName: "recall", toolCallId: "r", input: { id: "c7" }, content: [{ type: "text", text: "x".repeat(20000) }], isError: false }, ctx)).toBeUndefined();
 	});
 });

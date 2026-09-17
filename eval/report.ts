@@ -19,13 +19,13 @@ const k = (n: number) => `${(n / 1000).toFixed(1)}k`;
 const pct = (x: number) => `${(100 * x).toFixed(0)}%`;
 
 console.log("## Per condition\n");
-console.log("| condition | runs | passed | calls | uncached input | cached input | cache hit | output | wall (s) | pruned tokens | final prompt (mean) |");
-console.log("|---|---|---|---|---|---|---|---|---|---|---|");
+console.log("| condition | runs | passed | calls | uncached input | cached input | cache hit | output | wall (s) | pruned tokens | final prompt (mean) | presend compressed | recalls |");
+console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 for (const c of conds) {
 	const rs = results.filter((r) => r.cond === c);
 	const sum = (f: (r: RunResult) => number) => rs.reduce((a, r) => a + f(r), 0);
 	const input = sum((r) => r.input), cached = sum((r) => r.cacheRead);
-	console.log(`| ${c} | ${rs.length} | ${rs.filter((r) => r.ok).length} | ${sum((r) => r.calls)} | ${k(input)} | ${k(cached)} | ${pct(cached / Math.max(1, input + cached))} | ${k(sum((r) => r.output))} | ${Math.round(sum((r) => r.wallMs) / 1000)} | ${k(sum((r) => r.pruned ?? 0))} | ${k(sum((r) => r.finalPrompt ?? 0) / Math.max(1, rs.length))} |`);
+	console.log(`| ${c} | ${rs.length} | ${rs.filter((r) => r.ok).length} | ${sum((r) => r.calls)} | ${k(input)} | ${k(cached)} | ${pct(cached / Math.max(1, input + cached))} | ${k(sum((r) => r.output))} | ${Math.round(sum((r) => r.wallMs) / 1000)} | ${k(sum((r) => r.pruned ?? 0))} | ${k(sum((r) => r.finalPrompt ?? 0) / Math.max(1, rs.length))} | ${sum((r) => r.presend?.compressed ?? 0)}/${sum((r) => r.presend?.considered ?? 0)} | ${sum((r) => r.recalls ?? 0)} |`);
 }
 
 console.log("\n## Per task\n");

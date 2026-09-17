@@ -36,6 +36,16 @@ export interface Config {
 	/** Max chars of tool output sent to jev (head + tail). */
 	stateHeadChars: number;
 	stateTailChars: number;
+	/** Pre-send compression of large tool results (jev picks a view before the output is ever sent). */
+	presend: boolean;
+	/** Only results at least this large (estimated tokens) are considered for pre-send compression. */
+	presendMinTokens: number;
+	/** Send full when P(needs full) is above this. */
+	presendNeedsFullAbove: number;
+	/** Send full when the "full" option itself gets more than this probability mass. */
+	presendFullMassAbove: number;
+	/** Send full when the choice confidence is below this. */
+	presendMinConfidence: number;
 	model: string;
 	/** Force the mock classifier even when a key is present (tests, dry runs). */
 	forceMock: boolean;
@@ -85,6 +95,11 @@ export function loadConfig(): Config {
 		trimTailLines: num("JEV_MEMORY_TRIM_TAIL", 15),
 		stateHeadChars: num("JEV_MEMORY_STATE_HEAD", 2500),
 		stateTailChars: num("JEV_MEMORY_STATE_TAIL", 800),
+		presend: process.env.JEV_MEMORY_PRESEND !== "0",
+		presendMinTokens: num("JEV_MEMORY_PRESEND_MIN_TOKENS", 1200),
+		presendNeedsFullAbove: num("JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE", 0.5),
+		presendFullMassAbove: num("JEV_MEMORY_PRESEND_FULL_MASS_ABOVE", 0.35),
+		presendMinConfidence: num("JEV_MEMORY_PRESEND_MIN_CONFIDENCE", 0.4),
 		model: process.env.JEV_MEMORY_MODEL || "jev-latest",
 		forceMock: process.env.JEV_MEMORY_CLASSIFIER === "mock",
 		logFile: process.env.JEV_MEMORY_LOG !== "0",
