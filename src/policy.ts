@@ -34,31 +34,45 @@ export function decideBucket(p: { needed: number; outcomeOnly: number }, cfg: Co
 	return "keep";
 }
 
-/** Tokens that pending (not yet applied) decisions would remove from this message list. */
-export function pendingPrunable(messages: AgentMessage[], ledger: Map<string, Decision>, cfg: Config): number {
-	let n = 0;
+/**
+ * Tokens that pending (not yet applied) decisions would remove from this message list, and the
+ * size of the tail that applying them would rewrite (everything from the first pending decision on).
+ */
+export function pendingPrunable(messages: AgentMessage[], ledger: Map<string, Decision>, cfg: Config): { tokens: number; tailTokens: number } {
+	let tokens = 0;
+	let tailTokens = 0;
+	let inTail = false;
 	for (const m of messages) {
-		if (m.role !== "toolResult") continue;
-		const d = ledger.get(m.toolCallId);
-		if (!d || d.status !== "pending" || d.bucket === "keep") continue;
-		const before = estimateTokensOfText(contentText(m.content));
-		const after = estimateTokensOfText(contentText((transformToolResult(m, d, cfg) as ToolResultMessage).content));
-		n += Math.max(0, before - after);
+		const size = estimateTokensOfText(contentText((m as { content?: unknown }).content));
+		if (m.role === "toolResult") {
+			const d = ledger.get(m.toolCallId);
+			if (d && d.status === "pending" && d.bucket !== "keep") {
+				const after = estimateTokensOfText(contentText((transformToolResult(m, d, cfg) as ToolResultMessage).content));
+				tokens += Math.max(0, size - after);
+				inTail = true;
+			}
+		}
+		if (inTail) tailTokens += size;
 	}
-	return n;
+	return { tokens, tailTokens };
 }
 
-/** Decide whether this call should apply pending decisions, given the mode and cache state. */
+/**
+ * Decide whether this call should apply pending decisions, given the mode and cache state.
+ * Budget mode reasons about the cache: applying rewrites the tail once (tailTokens at full price
+ * instead of the cached rate), and then saves `tokens` at the cached rate on every later call.
+ * With a 10x cache discount that pays back after ~9 × tailTokens / tokens calls, so we apply
+ * when the prunable share of the tail is at least `budgetFraction`.
+ */
 export function shouldApplyPending(
 	mode: Config["mode"],
 	cfg: Config,
 	coldCache: boolean,
-	pendingTokens: number,
-	promptTokens: number,
+	pending: { tokens: number; tailTokens: number },
 ): { apply: boolean; reason: string } {
 	if (coldCache) return { apply: true, reason: "cold-cache" };
 	if (mode === "rolling") return { apply: true, reason: "rolling" };
-	if (mode === "budget" && pendingTokens >= cfg.budgetMinTokens && pendingTokens >= cfg.budgetFraction * promptTokens) {
+	if (mode === "budget" && pending.tokens >= cfg.budgetMinTokens && pending.tokens >= cfg.budgetFraction * pending.tailTokens) {
 		return { apply: true, reason: "budget" };
 	}
 	return { apply: false, reason: mode };

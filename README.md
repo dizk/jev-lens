@@ -47,7 +47,8 @@ Inside pi: `/jev-memory` shows stats, `/jev-memory decisions` lists every decisi
 
 | variable | default | meaning |
 |---|---|---|
-| `JEV_MEMORY_MODE` | `rolling` | `rolling` or `batch` (see above) |
+| `JEV_MEMORY_MODE` | `budget` | `rolling`, `batch` or `budget` (see above) |
+| `JEV_MEMORY_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` | `0.5` / `1000` | budget mode: apply when pending prunes remove at least this share of the tail they rewrite, and at least this many tokens |
 | `JEV_MEMORY_FORGET_BELOW` | `0.25` | P(needed) below this → forget |
 | `JEV_MEMORY_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
 | `JEV_MEMORY_DURABLE_ABOVE` | `0.7` | P(durable) above this → memory file |

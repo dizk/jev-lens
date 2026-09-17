@@ -242,9 +242,8 @@ export default function (pi: ExtensionAPI) {
 			await Promise.race([Promise.allSettled([...inflight.values()]), new Promise((r) => setTimeout(r, cfg.classifyWaitMs))]);
 		}
 
-		const pendingTokens = pendingPrunable(event.messages, ledger, cfg);
-		const promptTokens = event.messages.reduce((a, m) => a + estimateTokensOfText(contentText((m as { content?: unknown }).content)), 0);
-		const { apply: applyPending, reason } = shouldApplyPending(cfg.mode, cfg, coldCache, pendingTokens, promptTokens);
+		const pending = pendingPrunable(event.messages, ledger, cfg);
+		const { apply: applyPending, reason } = shouldApplyPending(cfg.mode, cfg, coldCache, pending);
 		const result = applyLedger(event.messages, ledger, cfg, applyPending, callIndex, reason);
 		for (const d of result.appliedNow) persist(d);
 		totals.applied += result.appliedNow.length;
@@ -264,7 +263,7 @@ export default function (pi: ExtensionAPI) {
 			pendingHeld: result.pendingHeld,
 			coldCache,
 		};
-		log({ event: "context", ...stats, reason, pendingTokens, promptTokens, inflight: inflight.size });
+		log({ event: "context", ...stats, reason, pendingTokens: pending.tokens, tailTokens: pending.tailTokens, inflight: inflight.size });
 		status(ctx);
 		return { messages: result.messages };
 	});

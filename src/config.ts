@@ -13,7 +13,7 @@ export interface Config {
 	 * budget: like batch, but also apply when pending prunable tokens exceed a share of the prompt (one rewrite buys many calls).
 	 */
 	mode: SealMode;
-	/** budget mode: apply pending decisions when they cover at least this fraction of the outgoing prompt... */
+	/** budget mode: apply pending decisions when they remove at least this fraction of the tail they would rewrite... */
 	budgetFraction: number;
 	/** ...and at least this many tokens. */
 	budgetMinTokens: number;
@@ -70,8 +70,8 @@ export function loadConfig(): Config {
 	return {
 		enabled: process.env.JEV_MEMORY_DISABLED !== "1",
 		mode,
-		budgetFraction: num("JEV_MEMORY_BUDGET_FRACTION", 0.15),
-		budgetMinTokens: num("JEV_MEMORY_BUDGET_MIN_TOKENS", 4000),
+		budgetFraction: num("JEV_MEMORY_BUDGET_FRACTION", 0.5),
+		budgetMinTokens: num("JEV_MEMORY_BUDGET_MIN_TOKENS", 1000),
 		forgetBelow: num("JEV_MEMORY_FORGET_BELOW", 0.25),
 		trimBelow: num("JEV_MEMORY_TRIM_BELOW", 0.5),
 		trimAbove: num("JEV_MEMORY_TRIM_ABOVE", 0.6),

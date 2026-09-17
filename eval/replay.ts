@@ -135,8 +135,7 @@ export async function replaySession(file: string, classifier: Classifier, mode: 
 		// ---- the call that produced this assistant message: context = messages[0..k)
 		report.calls++;
 		const context = messages.slice(0, k);
-		const promptTokens = context.reduce((a, m) => a + tokensOf(m), 0);
-		const { apply: applyPending, reason } = shouldApplyPending(mode, cfg, false, pendingPrunable(context, ledger, cfg), promptTokens);
+		const { apply: applyPending, reason } = shouldApplyPending(mode, cfg, false, pendingPrunable(context, ledger, cfg));
 		const result = applyLedger(context, ledger, cfg, applyPending, report.calls, reason);
 		for (const d of result.appliedNow) {
 			if (d.bucket === "forget") {
