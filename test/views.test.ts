@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildCandidates, detectKind, extractTerms, focusView, footer, headTailView, looksRepetitive, outlineView, sampleView, signalsView } from "../src/views.ts";
+import { buildCandidates, detectKind, displayedFiles, extractTerms, kindOfFiles, focusView, footer, headTailView, looksRepetitive, outlineView, sampleView, signalsView } from "../src/views.ts";
 
 const categories = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
 const csv = readFileSync(new URL("../eval/fixture/data/sample.csv", import.meta.url), "utf8");
@@ -16,6 +16,16 @@ describe("detectKind", () => {
 		expect(detectKind("read", { path: "noext" }, csv)).toBe("data");
 		expect(looksRepetitive(csv)).toBe(true);
 		expect(looksRepetitive(design)).toBe(false);
+	});
+	it("treats a shell command that only displays source files as code", () => {
+		expect(detectKind("bash", { command: "cat src/semarb/{models,engine}.py" }, categories)).toBe("code");
+		expect(detectKind("bash", { command: "sed -n '301,660p' src/a.ts" }, categories)).toBe("code");
+		expect(detectKind("bash", { command: "cat a.py | head -180; cat tests/*.py" }, categories)).toBe("code");
+		expect(detectKind("bash", { command: "cat README.md docs/DESIGN.md" }, design)).toBe("prose");
+		// mixed with other commands, or output that does not look like code: still command output
+		expect(detectKind("bash", { command: "ls src; cat src/a.py" }, categories)).toBe("command");
+		expect(detectKind("bash", { command: "cat src/a.py" }, "cat: src/a.py: No such file or directory")).toBe("command");
+		expect(detectKind("bash", { command: "cat data.json" }, categories)).toBe("command");
 	});
 });
 
@@ -59,6 +69,28 @@ describe("views are subsets with line numbers", () => {
 		const v = headTailView(csv, 5, 2);
 		expect(v.included.slice(0, 5)).toEqual([1, 2, 3, 4, 5]);
 		expect(v.included.at(-1)).toBe(csv.split("\n").length);
+	});
+});
+
+describe("displayedFiles", () => {
+	it("parses display commands, brace groups, globs and pipelines", () => {
+		expect(displayedFiles("cat src/semarb/{models,engine}.py")).toEqual(["src/semarb/models.py", "src/semarb/engine.py"]);
+		expect(displayedFiles("cat a.py b.py; cat tests/*.py")).toEqual(["a.py", "b.py", "tests/*.py"]);
+		expect(displayedFiles("sed -n '1,80p' x.ts && head -50 y.go | tail -20")).toEqual(["x.ts", "y.go"]);
+		expect(displayedFiles("/bin/cat \"docs/a b.md\"")).toEqual(["docs/a b.md"]);
+		expect(displayedFiles("pwd; cat a.py")).toBeUndefined();
+		expect(displayedFiles("cat a.py | wc -l")).toBeUndefined();
+		expect(displayedFiles("uv run python - <<'PY'\nprint(1)\nPY")).toBeUndefined();
+		expect(displayedFiles("cat")).toBeUndefined();
+		expect(kindOfFiles(["a.py", "README.md"])).toBe("code");
+		expect(kindOfFiles(["a.md", "b.txt"])).toBe("prose");
+		expect(kindOfFiles(["a.json"])).toBeUndefined();
+	});
+	it("gives bash file displays the same views as read", () => {
+		const c = buildCandidates("bash", { command: "cat src/categories.js" }, categories, ["normalizeCategory"]);
+		expect(c.kind).toBe("code");
+		expect(c.views.map((v) => v.kind)).toContain("outline");
+		expect(c.views.map((v) => v.kind)).not.toContain("signals");
 	});
 });
 

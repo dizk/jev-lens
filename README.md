@@ -18,7 +18,10 @@ The extension has three complementary layers, all enabled by default:
 Large text tool results (default: at least 1200 estimated tokens, estimated as characters / 4) are considered for
 compression in pi's `tool_result` hook. Results containing images and calls to `recall` are excluded. Code builds
 candidate **views** from the output, with line numbers; some lines are shortened or normalized, and omission markers
-are added. Full text is still sent when no suitable reduced view is available or classification fails:
+are added. Full text is still sent when no suitable reduced view is available or classification fails. Shell
+commands that only display files (`cat a.py b.py`, `sed -n '1,80p' x.ts`, `head`, brace groups, globs, pipelines
+into `head`/`tail`/`sed`) count as code or prose, not command output, so agents that read through bash get the same
+views as `read`:
 
 | view | for | keeps |
 |---|---|---|

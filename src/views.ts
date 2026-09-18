@@ -20,12 +20,68 @@ const CODE_EXT = /\.(js|mjs|cjs|ts|tsx|jsx|py|go|rs|java|kt|kts|rb|php|c|h|cc|cp
 const DATA_EXT = /\.(csv|tsv|jsonl|ndjson|log|json|xml|yaml|yml|toml)$/i;
 const PROSE_EXT = /\.(md|txt|rst|adoc)$/i;
 
+const DISPLAY_CMDS = new Set(["cat", "sed", "head", "tail", "nl", "bat", "less", "more"]);
+const FILTER_CMDS = new Set(["head", "tail", "sed", "nl", "cat"]);
+
+/**
+ * Files shown by a shell command that only displays file contents: `cat a.py b.py`, `sed -n '1,80p' x.ts`,
+ * `head -50 f.go | tail -20`, `cat src/{a,b}.py`, `cat tests/*.py`, joined with `;`, `&&` or newlines.
+ * Brace groups are expanded; globs are kept as written (their extension still tells the kind).
+ * Returns undefined when any segment is not such a display (so the output is not a plain file view).
+ */
+export function displayedFiles(command: string): string[] | undefined {
+	const files: string[] = [];
+	const segments = command.split(/\s*(?:;|&&|\|\||\n)\s*/).filter((s) => s.trim());
+	if (segments.length === 0) return undefined;
+	for (const seg of segments) {
+		const stages = seg.split(/\s\|\s/);
+		for (let k = 0; k < stages.length; k++) {
+			const toks = [...stages[k].matchAll(/'[^']*'|"[^"]*"|\S+/g)].map((m) => m[0]);
+			const cmd = toks[0]?.replace(/^.*\//, "");
+			if (!cmd || !(k === 0 ? DISPLAY_CMDS : FILTER_CMDS).has(cmd)) return undefined;
+			if (k > 0) continue;
+			for (const raw of toks.slice(1)) {
+				const t = raw.replace(/^['"]|['"]$/g, "");
+				if (t.startsWith("-") || /[<>`$]/.test(t)) continue;
+				for (const f of expandBraces(t)) if (/\.[A-Za-z0-9]+$/.test(f)) files.push(f);
+			}
+		}
+	}
+	return files.length ? files : undefined;
+}
+
+function expandBraces(t: string): string[] {
+	const m = /^(.*?)\{([^{}]*)\}(.*)$/.exec(t);
+	if (!m || !m[2].includes(",")) return [t];
+	return m[2].split(",").flatMap((alt) => expandBraces(m[1] + alt + m[3]));
+}
+
+function countLines(text: string, re: RegExp, max = 400): number {
+	let n = 0;
+	for (const l of text.split("\n", max)) if (re.test(l)) n++;
+	return n;
+}
+
+/** Kind of a set of displayed files: code if any is source, prose if all are docs, else undefined. */
+export function kindOfFiles(files: string[]): ContentKind | undefined {
+	if (files.some((f) => CODE_EXT.test(f))) return "code";
+	if (files.every((f) => PROSE_EXT.test(f))) return "prose";
+	return undefined;
+}
+
 /** Guess what kind of content this is from the tool, its arguments and the text itself. */
 export function detectKind(toolName: string, args: unknown, text: string): ContentKind {
 	const a = (args ?? {}) as Record<string, unknown>;
 	const path = typeof a.path === "string" ? a.path : "";
 	if (/^Here's the files and directories up to \d+ levels deep/.test(text) || looksLikePathList(text)) return "listing";
-	if (toolName === "bash" || toolName === "powershell") return "command";
+	if (toolName === "bash" || toolName === "powershell") {
+		// Agents that read files with cat/sed/head get the code and prose views, not the command ones.
+		const shown = typeof a.command === "string" ? displayedFiles(a.command) : undefined;
+		const shownKind = shown ? kindOfFiles(shown) : undefined;
+		if (shownKind === "code" && countLines(text, SIG_RE) >= 3) return "code";
+		if (shownKind === "prose" && countLines(text, HEADING_RE) >= 2) return "prose";
+		return "command";
+	}
 	if (toolName === "ls" || toolName === "find" || toolName === "grep") return "listing";
 	if (CODE_EXT.test(path)) return "code";
 	if (DATA_EXT.test(path)) return "data";
@@ -436,10 +492,11 @@ export function relevantView(text: string, kind: ContentKind, blocks: Block[], e
 export async function buildCandidatesAsync(toolName: string, args: unknown, text: string, terms: string[], params: Partial<ViewParams> = {}): Promise<Candidates & { blocks?: Block[] }> {
 	const minShrink = params.minShrink ?? DEFAULT_VIEW_PARAMS.minShrink;
 	const base = buildCandidates(toolName, args, text, terms, params);
-	const path = typeof (args as { path?: unknown })?.path === "string" ? ((args as { path: string }).path) : "";
-	if (base.kind !== "code" || !path) return base;
+	if (base.kind !== "code") return base;
 	try {
-		const { treeSitterBlocks, treeSitterOutline } = await import("./treesitter.ts");
+		const { languageForPath, treeSitterBlocks, treeSitterOutline } = await import("./treesitter.ts");
+		const path = grammarPath(args, languageForPath);
+		if (!path) return base;
 		const [blocks, outlineIdx] = await Promise.all([treeSitterBlocks(path, text), treeSitterOutline(path, text)]);
 		if (!outlineIdx || outlineIdx.length < 2) return { ...base, blocks: blocks ?? undefined };
 		const lines = text.split("\n");
@@ -451,4 +508,19 @@ export async function buildCandidatesAsync(toolName: string, args: unknown, text
 	} catch {
 		return base;
 	}
+}
+
+/**
+ * The path whose grammar should parse this result: the read path, or, for a shell display command,
+ * the first shown file when every shown file is in the same language (concatenated same-language files parse fine).
+ */
+function grammarPath(args: unknown, languageForPath: (p: string) => string | undefined): string | undefined {
+	const a = (args ?? {}) as { path?: unknown; command?: unknown };
+	if (typeof a.path === "string") return a.path;
+	if (typeof a.command !== "string") return undefined;
+	const files = displayedFiles(a.command);
+	if (!files) return undefined;
+	const lang = languageForPath(files[0]);
+	if (!lang || files.some((f) => languageForPath(f) !== lang)) return undefined;
+	return files[0];
 }

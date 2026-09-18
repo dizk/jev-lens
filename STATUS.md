@@ -278,6 +278,23 @@ Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into 
 
 Honest reading: as a next-step predictor with this crude state, jev is not better than edge frequency. Its disagreements are systematic and defensible (it wants `bash:test` where the agent wrote a test first, and `final_answer` where the agent kept editing), which is what a guidance model is for: flagging departures from the known-good path, not imitating the agent. The mined graph itself is already informative: after `edit:src`, passing runs go to `bash:test` 96 % of the time. The design for using it as deviation detection with a one-line nudge is in `docs/ideas.md`.
 
+## Live sessions with gpt-6-astra: bash file displays as code (2026-09-18, evening)
+
+Five real pi sessions in `jev-contract-comp` (138 LLM calls, model `gpt-6-astra`) showed jev almost idle: 41 large results, 6 compressed, 35 sent full; post-send 65 keep / 2 forget, one prune applied. The reason is the agent's habit, not the thresholds: 33 of the 41 large results were `bash`, and most of those were plain file displays (`cat src/semarb/{models,engine}.py`, `cat a.py; cat b.py; cat tests/*.py`, `sed -n '301,660p' f`). The extension typed every bash result as `command`, which only offers `signals`/`focus`/`head_tail`/`log`, so jev correctly answered "full" (0.6 to 0.93) to a question that had no code view in it.
+
+**Change.** `detectKind` now parses the shell command: when every segment is a display command (`cat`, `sed`, `head`, `tail`, `nl`, `bat`, optionally piped into `head`/`tail`/`sed`), brace groups expanded and globs kept, and the shown files are source (or all prose), the result is typed `code` (or `prose`) and gets the outline/relevant path, including tree-sitter blocks when all shown files share a language. The output must also look like code (3+ signature lines), so a `cat` that failed stays `command`. Anything mixed with `ls`, `find`, `uv run`, heredocs and so on stays `command`.
+
+**Offline replay of the five Astra sessions** (`eval/presend-replay.ts`, jev deciding):
+
+| | large | compressed | saved | edit-miss | quote-miss | ref-miss | kinds |
+|---|---|---|---|---|---|---|---|
+| before | 38 | 2 | 0.2 % | 0/1 | 0 | 0 | command 30, code 7, prose 1 |
+| after | 38 | 5 | 3.4 % | 0/1 | 0 | 2 | command 24, code 12, prose 2 |
+
+Five bash results became code; jev compressed three of them to `relevant` (3.8k → 3.3k, 9.8k → 6.4k, 5.0k → 3.5k tokens) and expanded the other two back to full. The two ref-misses are `__file__` and `SimpleNamespace`, Python names the agent did not learn from the omitted bodies, so the scorer overcounts them. The remaining 24 command results are heredoc Python, JSON dumps and mixed pipelines: the next view type to build.
+
+**Holdout benchmark** (`eval/bench/holdout-v13-bash-display.md`): 78.9 % saved, 0/15 edit-miss, 4 quote-miss, 16 ref-miss, objective 75.4, against 78.6 % / 75.2 for the previous default. No result changed kind: the OpenHands agent reads through its own file tool, so this is run-to-run noise and confirms no regression.
+
 ## What to try next
 
 1. **Pre-send judgment**: built, see above. Next are more view types and learned thresholds.

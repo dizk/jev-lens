@@ -57,4 +57,14 @@ describe("language support (tree-sitter + regex fallback)", () => {
 		expect(c.views.map((v) => v.kind)).toContain("outline");
 		expect(c.blocks!.length).toBeGreaterThanOrEqual(5);
 	});
+	it("uses the grammar of the files a shell command displays", async () => {
+		const t = sample("sample.ts");
+		const c = await buildCandidatesAsync("bash", { command: "cat sample.ts | head -400" }, t, [], { minShrink: 0.95 });
+		expect(c.kind).toBe("code");
+		expect(c.views.map((v) => v.kind)).toContain("outline");
+		expect(c.blocks!.length).toBeGreaterThanOrEqual(5);
+		const mixed = await buildCandidatesAsync("bash", { command: "cat sample.ts sample.rs" }, t, [], { minShrink: 0.95 });
+		expect(mixed.kind).toBe("code");
+		expect(mixed.blocks).toBeUndefined(); // two languages: regex outline, no tree-sitter blocks
+	});
 });
