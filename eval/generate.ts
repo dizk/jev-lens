@@ -17,7 +17,7 @@ const FIXTURE = join(ROOT, "eval", "fixture");
 const RUNS = join(ROOT, "eval", "runs");
 const TASKS = JSON.parse(readFileSync(join(ROOT, "eval", "tasks", "tasks.json"), "utf8")) as { id: string; prompt: string; hidden: string; scoreOnlyHidden?: boolean }[];
 
-interface Args { cond: string; tasks?: string[]; repeat: number; from: number; parallel: number; model: string; timeoutMs: number; mode: "rolling" | "batch" | "budget" }
+interface Args { cond: string; tasks?: string[]; repeat: number; from: number; variant?: string; parallel: number; model: string; timeoutMs: number; mode: "rolling" | "batch" | "budget" }
 function parseArgs(argv: string[]): Args {
 	const a: Args = { cond: "baseline", repeat: 1, from: 1, parallel: 2, model: "openai-codex/gpt-5.6-luna", timeoutMs: 15 * 60 * 1000, mode: "rolling" };
 	for (let i = 0; i < argv.length; i++) {
@@ -26,6 +26,7 @@ function parseArgs(argv: string[]): Args {
 		else if (v === "--tasks") a.tasks = argv[++i].split(",");
 		else if (v === "--repeat") a.repeat = Number(argv[++i]);
 		else if (v === "--from") a.from = Number(argv[++i]);
+		else if (v === "--variant") a.variant = resolve(argv[++i]);
 		else if (v === "--parallel") a.parallel = Number(argv[++i]);
 		else if (v === "--model") a.model = argv[++i];
 		else if (v === "--timeout") a.timeoutMs = Number(argv[++i]) * 1000;
@@ -68,7 +69,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	if (args.cond.startsWith("jev")) piArgs.unshift("-e", join(ROOT, "index.ts"));
 	piArgs.push(task.prompt);
 	const t0 = Date.now();
-	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_MEMORY_MODE: args.mode, JEV_MEMORY_PRESEND: args.cond.includes("presend") ? "1" : "0" } });
+	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_MEMORY_MODE: args.mode, JEV_MEMORY_PRESEND: args.cond.includes("presend") ? "1" : "0", ...(args.variant ? { JEV_MEMORY_VARIANT: args.variant } : {}) } });
 	const wallMs = Date.now() - t0;
 	writeFileSync(join(dir, "pi.stderr"), r.err);
 

@@ -1,7 +1,7 @@
 /**
  * Autoresearch loop for pre-send compression.
  *
- *   node --import tsx eval/bench/autoresearch.ts [--iterations 8] [--from 0] [--to 60] [--concurrency 6] [--researcher openai-codex/gpt-5.6-luna]
+ *   node --import tsx eval/bench/autoresearch.ts [--iterations 8] [--from 0] [--to 60] [--concurrency 6] [--researcher openai-codex/gpt-5.6-luna] [--round-dir research/round3]
  *
  * Each iteration: ask the researcher model (via pi -p) for a new variant JSON given PROGRAM.md, the current best,
  * and the history; evaluate it on the train slice; keep it if the objective improves. Everything is logged to
@@ -15,8 +15,9 @@ import { fileURLToPath } from "node:url";
 import { runBenchmark, type Variant } from "./run.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const RESEARCH = join(ROOT, "research");
 function arg(name: string, def: string): string { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : def; }
+const RESEARCH = resolve(ROOT, arg("--round-dir", "research"));
+const PROGRAM_FILE = join(ROOT, "research", "PROGRAM.md");
 
 function askResearcher(model: string, prompt: string): Variant | undefined {
 	const r = spawnSync("pi", ["-p", "--no-session", "--no-tools", "--model", model, "--thinking", "medium", prompt], { cwd: ROOT, encoding: "utf8", timeout: 240_000, stdio: ["ignore", "pipe", "pipe"] });
@@ -32,7 +33,7 @@ async function main() {
 	const concurrency = Number(arg("--concurrency", "6"));
 	const researcher = arg("--researcher", "openai-codex/gpt-5.6-luna");
 	mkdirSync(RESEARCH, { recursive: true });
-	const program = readFileSync(join(RESEARCH, "PROGRAM.md"), "utf8");
+	const program = readFileSync(PROGRAM_FILE, "utf8");
 	const logFile = join(RESEARCH, "log.jsonl");
 	const history: { variant: Variant; summary: ReturnType<typeof JSON.parse>; kept: boolean }[] = existsSync(logFile) ? readFileSync(logFile, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l)) : [];
 	let best: { variant: Variant; objective: number; summary: unknown } | undefined = existsSync(join(RESEARCH, "best.json")) ? JSON.parse(readFileSync(join(RESEARCH, "best.json"), "utf8")) : undefined;

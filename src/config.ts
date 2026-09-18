@@ -51,6 +51,8 @@ export interface Config {
 	/** Second step for code: expand the bodies of blocks jev says the agent will need (P above this). */
 	presendExpandAbove: number;
 	model: string;
+	/** Optional variant file (JEV_MEMORY_VARIANT): { config, prompts, views } overrides, as produced by eval/bench/autoresearch.ts. */
+	variantFile: string | undefined;
 	/** Force the mock classifier even when a key is present (tests, dry runs). */
 	forceMock: boolean;
 	logFile: boolean;
@@ -107,8 +109,34 @@ export function loadConfig(): Config {
 		presendMinConfidence: num("JEV_MEMORY_PRESEND_MIN_CONFIDENCE", 0),
 		presendExpandAbove: num("JEV_MEMORY_PRESEND_EXPAND_ABOVE", 0.5),
 		model: process.env.JEV_MEMORY_MODEL || "jev-latest",
+		variantFile: process.env.JEV_MEMORY_VARIANT || undefined,
 		forceMock: process.env.JEV_MEMORY_CLASSIFIER === "mock",
 		logFile: process.env.JEV_MEMORY_LOG !== "0",
 		apiKey: process.env.TYPESAFE_API_KEY,
 	};
+}
+
+export interface VariantOverrides {
+	name?: string;
+	config?: Partial<Config>;
+	prompts?: Record<string, unknown>;
+	views?: Record<string, number>;
+}
+
+/** Read a variant file (either a bare variant or an autoresearch best.json with { variant }). */
+export function loadVariant(path: string | undefined): VariantOverrides {
+	if (!path) return {};
+	try {
+		const raw = JSON.parse(readFileSync(path, "utf8")) as VariantOverrides & { variant?: VariantOverrides };
+		return raw.variant ?? raw;
+	} catch {
+		return {};
+	}
+}
+
+/** Config with a variant's config overrides applied. */
+export function loadConfigWithVariant(): { cfg: Config; variant: VariantOverrides } {
+	const base = loadConfig();
+	const variant = loadVariant(base.variantFile);
+	return { cfg: { ...base, ...(variant.config ?? {}) }, variant };
 }

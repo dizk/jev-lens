@@ -21,9 +21,9 @@ import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
-import { buildPresendState, decideView, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier } from "./src/presend.ts";
+import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "./src/presend.ts";
 import { buildCandidatesAsync, extractTerms, footer } from "./src/views.ts";
-import { loadConfig, type Config } from "./src/config.ts";
+import { loadConfigWithVariant, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { appendNotes, memoryPromptSection, readMemoryFile } from "./src/memory-file.ts";
 import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "./src/policy.ts";
@@ -36,10 +36,12 @@ interface PendingResult {
 }
 
 export default function (pi: ExtensionAPI) {
-	const cfg: Config = loadConfig();
+	const { cfg, variant } = loadConfigWithVariant();
+	const prompts: PromptVariant = { ...DEFAULT_PROMPTS, ...((variant.prompts ?? {}) as Partial<PromptVariant>), viewDescriptions: { ...DEFAULT_PROMPTS.viewDescriptions, ...(((variant.prompts ?? {}) as Partial<PromptVariant>).viewDescriptions ?? {}) } };
+	const viewParams = variant.views ?? {};
 	const usingMock = cfg.forceMock || !cfg.apiKey;
 	const classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
-	const presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model);
+	const presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
 	/** Full text of compressed tool results, by toolCallId, for the recall tool (also persisted in result details). */
 	const fullOutputs = new Map<string, { text: string; toolName: string; args: unknown; view: string }>();
 	let lastAssistantText = "";
@@ -110,7 +112,7 @@ export default function (pi: ExtensionAPI) {
 				if (d?.full) fullOutputs.set(entry.message.toolCallId, { text: d.full, toolName: entry.message.toolName, args: d.args, view: d.view ?? "?" });
 			}
 		}
-		log({ event: "session_start", mode: cfg.mode, enabled: cfg.enabled, mock: usingMock, ledger: ledger.size });
+		log({ event: "session_start", mode: cfg.mode, enabled: cfg.enabled, mock: usingMock, ledger: ledger.size, variant: variant.name ?? null });
 		if (ctx.hasUI && usingMock) ctx.ui.notify("jev-memory: TYPESAFE_API_KEY not set, using mock classifier", "warning");
 		status(ctx);
 	});
@@ -318,7 +320,7 @@ export default function (pi: ExtensionAPI) {
 		presendTotals.considered++;
 		const started = Date.now();
 		const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
-		const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms);
+		const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms, viewParams);
 		if (cands.views.length < 2) {
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
 			return;
