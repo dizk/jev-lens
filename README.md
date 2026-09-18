@@ -97,6 +97,8 @@ npm test                                      # unit tests for the policy, ledge
 node --import tsx eval/replay.ts <session.jsonl|dir>   # offline: classify a recorded session, simulate post-send pruning
 node --import tsx eval/presend-replay.ts <dir>          # offline: pre-send views vs what the agent did next (edit/quote misses)
 node --import tsx eval/action-graph.ts                  # procedural graph mined from runs, jev as guidance model
+node --import tsx eval/bench/run.ts --from 200 --to 300 # pre-send benchmark on 100 real OpenHands trajectories (holdout)
+node --import tsx eval/bench/autoresearch.ts --iterations 8   # let a researcher model tune prompts/thresholds on the train slice
 node --import tsx eval/generate.ts --cond baseline     # run the fixture tasks with pi headless
 node --import tsx eval/generate.ts --cond jev
 node --import tsx eval/report.ts                       # compare conditions

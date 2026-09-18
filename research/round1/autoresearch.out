@@ -23,3 +23,59 @@
 [autoresearch] "lower-view-shrink-gate" objective 56.06 (best 66.07) saved 56.1% editMiss 0.0% quoteMiss 0.0% in 16s → discard
 [autoresearch] iteration 8/8: asking openai-codex/gpt-5.6-luna
 [autoresearch] evaluating "signals-first-with-code-orientation": Make signals the default for command output while preserving code-specific guidance, increasing command savings with no expected edit-recall loss.
+[autoresearch] "signals-first-with-code-orientation" objective 65.17 (best 66.07) saved 65.2% editMiss 0.0% quoteMiss 0.0% in 19s → discard
+{
+ "variant": {
+  "name": "code-structure",
+  "hypothesis": "Explicitly guide code results toward outline or focus when the agent is orienting or locating identifiers, while reserving full or relevant for exact edits and body-level work to improve code savings without harming edit recall.",
+  "prompts": {
+   "viewInstructions": "A coding agent working on `task` just called `agent.tool` with `agent.args` (its reasoning right before the call is `agent.text_before_call`). The output is large. Which view is the smallest one that still gives the agent everything needed for its next step? For command output, choose signals when errors, warnings, tests, or the final summary are sufficient; choose full when exact output, copying, or details anywhere are needed. For code, choose outline for structure and available definitions, focus for locating named identifiers, relevant when specific block bodies are needed, and full only for exact text, copying, or edits. For other output, prefer smaller views only when the agent's purpose is clearly served; when in doubt, choose full."
+  }
+ },
+ "objective": 66.06705863119616,
+ "summary": {
+  "results": 312,
+  "compressed": 267,
+  "tokens": 1180549,
+  "sent": 400595,
+  "savedPct": 66.06705863119616,
+  "editable": 3,
+  "editMiss": 0,
+  "editMissPct": 0,
+  "quoteMiss": 0,
+  "quoteMissPct": 0,
+  "views": {
+   "relevant": 26,
+   "signals": 167,
+   "outline": 27,
+   "full": 45,
+   "head_tail": 4,
+   "focus": 29,
+   "sample": 14
+  },
+  "byKind": {
+   "code": {
+    "n": 59,
+    "savedPct": 35.628843229860465,
+    "editMissPct": 0
+   },
+   "command": {
+    "n": 212,
+    "savedPct": 69.66920267574179,
+    "editMissPct": 0
+   },
+   "prose": {
+    "n": 24,
+    "savedPct": 81.5038603558241,
+    "editMissPct": 0
+   },
+   "data": {
+    "n": 17,
+    "savedPct": 72.82396453102386,
+    "editMissPct": 0
+   }
+  },
+  "objective": 66.06705863119616,
+  "meanMs": 352.56089743589746
+ }
+}

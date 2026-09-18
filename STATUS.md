@@ -117,6 +117,51 @@ Cost units = uncached + 0.1 × cached, from the provider's own counts. On the ma
 
 **What to extend.** Views for `grep`/`find` output, diffs and build logs; pre-send on long user pastes; per-tool thresholds learned from recall rates; and combining with budget-mode pruning, which then only has small results left to decide about.
 
+## Pre-send benchmark on real trajectories (added after the first night)
+
+Synthetic tasks read only a handful of large files, so I built a benchmark from real agent runs: 300 OpenHands
+trajectories from `nebius/SWE-rebench-openhands-trajectories` (Qwen3-Coder on SWE-rebench issues), converted to pi-style
+messages (`eval/bench/convert-openhands.ts`). They contain 19k tool results, 2070 of them large (≥ 1200 tokens, 7.1M
+tokens in total), overwhelmingly pytest runs and file views. Trajectories 0 to 199 are the training slice for
+autoresearch, 200 to 299 the holdout. Metrics (`eval/presend-score.ts`):
+
+- **saved%**: tokens not sent over all large results.
+- **edit-miss%**: large `read` results the agent edited before re-reading the file, where the edit's old text was not in the view.
+- **quote-miss%**: the next assistant message quotes a 40+ character line that only existed in the omitted part.
+- **ref-miss%**: the next two steps use an identifier that only existed in the omitted part and that the agent had not seen anywhere earlier in the session. The most honest harm proxy: it means the agent learned something from what we dropped.
+- objective = saved% − 5·edit-miss% − 2·quote-miss% − ref-miss%.
+
+New machinery built for this: tree-sitter outlines and block boundaries (`@vscode/tree-sitter-wasm`, JS/TS/Python/Go/Rust/Java/C/C++/C#/Ruby/PHP/Bash), method-level blocks inside large classes, a `testlog` view (failing tests with assertion and traceback, short summary, final counts), a `tree` view for directory listings, and line tidying that collapses decorative bars.
+
+### Holdout results (100 trajectories, 684 large results, 2.25M tokens)
+
+| variant | saved | edit-miss | quote-miss | ref-miss | objective | views |
+|---|---|---|---|---|---|---|
+| first version (regex outlines, no testlog/tree) | 55.9 % | 0/13 | 4 (0.7 %) | (not measured) | | signals 315, full 211, relevant 33, outline 30 |
+| + testlog view, method blocks | 67.0 % | 0/13 | 4 (0.6 %) | (not measured) | | signals 363, full 184, testlog 44, relevant 41 |
+| + tree view, default prompts | 69.3 % | 0/13 | 4 (0.6 %) | 27 (3.9 %) | 64.2 | signals 366, full 146, relevant 45, testlog 44, tree 31, outline 30 |
+| + autoresearch best prompt (round 1) | 68.8 % | 0/13 | 4 (0.6 %) | 26 (3.8 %) | 63.9 | signals 365, full 153, relevant 47, testlog 45, tree 31, outline 26 |
+
+Per kind, default prompts: command 78.5 % saved (ref-miss 3.0 %), code 29.6 % (4.8 %), prose 59.2 % (9.5 %), listing 49.9 % (6.7 %).
+
+### Autoresearch
+
+`eval/bench/autoresearch.ts` runs a loop: a researcher model (gpt-5.6-luna via `pi -p`) reads `research/PROGRAM.md`,
+the current best variant, the prompt texts and the history, proposes one variant (prompt texts, thresholds, view
+parameters), the benchmark scores it on 50 training trajectories (about 20 s, 1.3k jev calls), and it is kept if the
+objective improves. Eight iterations: three kept. The winner rewrote the view-choice instruction to give per-kind
+guidance (signals for command output unless exact text is needed; outline/focus/relevant/full for code by purpose).
+Train objective 55.2 → 66.1. Discarded: stricter block expansion (−11), tighter focus context (−11), lower shrink gate (−10).
+Log: `research/log.jsonl`, best: `research/best.json`.
+
+Caveats: the training slice is small and the loop optimises saved% since the harm metrics stay near zero on train;
+the holdout row above is the real test, and there the round-1 winner did **not** transfer: 68.8 % vs 69.3 % for the
+default prompt, within noise. The reason is visible in the history: round 1 ran against the older view set, and its
+gain came from pushing command output towards `signals`; the `testlog` and `tree` views added meanwhile capture the same
+tokens by construction. Lesson: on this problem, new code-built views moved the number (55.9 → 69.3 % on holdout with
+zero edit-misses), prompt wording did not. Round 2 of the loop (new views, corrected ref-miss) is in `research/round2/`. The researcher only touches text and numbers; the view builders are code
+and stay fixed within a loop.
+
 ## Procedural graph prototype (`eval/action-graph.ts`)
 
 Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
