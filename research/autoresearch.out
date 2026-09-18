@@ -1,0 +1,4 @@
+[autoresearch] baseline evaluation
+[autoresearch] baseline objective 63.83 saved 68.3% editMiss 0.0%
+[autoresearch] iteration 1/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "kind-aware-minimal": Route routine command and code-orientation requests to compact views while reserving full text for exact edits, copying, or broad detail review.

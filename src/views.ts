@@ -158,7 +158,7 @@ export function looksLikeTestLog(text: string): boolean {
  * section (test id, assertion, the last frames of its traceback), the short summary, and the
  * final counts. Passing tests, dots and decorative bars are dropped.
  */
-export function testlogView(text: string, ctx = 2, maxFailLines = 60): View | undefined {
+export function testlogView(text: string, ctx = 2, maxFailLines = 60, maxIds = 40): View | undefined {
 	if (!looksLikeTestLog(text)) return undefined;
 	const lines = text.split("\n");
 	const keep = new Set<number>();
@@ -175,6 +175,12 @@ export function testlogView(text: string, ctx = 2, maxFailLines = 60): View | un
 		}
 		if (inFailures && failLines < maxFailLines && l.trim()) { keep.add(i); failLines++; }
 	}
+	// keep a compact index of test ids (agents pick one to re-run), capped so verbose runs stay small
+	let ids = 0;
+	for (let i = 0; i < lines.length && ids < maxIds; i++) {
+		if (keep.has(i)) continue;
+		if (/^\S+\.(py|js|ts|rb|go|rs)::\S+ (PASSED|FAILED|ERROR|SKIPPED|XFAIL)/.test(lines[i]) || /^(✔|✓|ok \d+ -) /.test(lines[i])) { keep.add(i); ids++; }
+	}
 	// always keep the last 5 lines (final summary)
 	for (let i = Math.max(0, lines.length - 5); i < lines.length; i++) keep.add(i);
 	const idx = [...keep].sort((a, b) => a - b);
@@ -186,8 +192,9 @@ export function testlogView(text: string, ctx = 2, maxFailLines = 60): View | un
  * Directory listings and find output: group paths by directory, keep the first entries of each
  * directory and say how many more there are. Directories with many files (tests, fixtures) collapse.
  */
-export function treeView(text: string, perDir = 8): View | undefined {
+export function treeView(text: string, perDir = 8, terms: string[] = []): View | undefined {
 	const lines = text.split("\n");
+	const lowered = terms.map((t) => t.toLowerCase()).filter((t) => t.length >= 4);
 	const byDir = new Map<string, number[]>();
 	for (let i = 0; i < lines.length; i++) {
 		const t = lines[i].trim();
@@ -201,6 +208,7 @@ export function treeView(text: string, perDir = 8): View | undefined {
 	const keep = new Set<number>();
 	for (let i = 0; i < Math.min(2, lines.length); i++) if (!/^\s*[\w./-]+\/?$/.test(lines[i].trim())) keep.add(i);
 	for (const idx of byDir.values()) for (const i of idx.slice(0, perDir)) keep.add(i);
+	if (lowered.length) for (let i = 0; i < lines.length; i++) { const l = lines[i].toLowerCase(); if (lowered.some((t) => l.includes(t))) keep.add(i); }
 	const idx = [...keep].sort((a, b) => a - b);
 	if (idx.length >= lines.length * 0.8) return undefined;
 	return make("tree", lines, idx);
@@ -266,7 +274,7 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 	};
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
 	if (kind === "command") add(testlogView(text, P.signalsCtx));
-	if (kind === "listing") add(treeView(text));
+	if (kind === "listing") add(treeView(text, 8, terms));
 	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
 	if (kind === "data") add(sampleView(text, P.sampleRows));
 	add(focusView(text, terms, P.focusCtx));

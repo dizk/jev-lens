@@ -13,10 +13,16 @@ export interface ScoreRow {
 	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; refMiss: boolean; refMissId?: string; editsChecked: number; ms: number;
 }
 
-/** Identifier-like tokens (camelCase, snake_case, dotted, 5+ chars) from text and tool arguments. */
+/** Code-like identifiers only: snake_case, camelCase or containing digits, 5+ chars. Plain words (even long ones) are not identifiers. */
 function identifiers(text: string): Set<string> {
 	const out = new Set<string>();
-	for (const m of text.matchAll(/[A-Za-z_][A-Za-z0-9_]{4,}/g)) { const w = m[0]; if (/[A-Z_]/.test(w.slice(1)) || w.length >= 8) out.add(w); }
+	for (const m of text.matchAll(/[A-Za-z_][A-Za-z0-9_]{4,}/g)) {
+		const w = m[0];
+		const camel = /[a-z][A-Z]/.test(w);
+		const snake = w.includes("_") && !/^_+$/.test(w);
+		const digit = /\d/.test(w);
+		if (camel || snake || digit) out.add(w);
+	}
 	return out;
 }
 

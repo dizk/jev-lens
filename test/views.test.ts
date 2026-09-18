@@ -121,3 +121,22 @@ describe("tree view", () => {
 		expect(v.lines).toBeLessThan(30);
 	});
 });
+
+describe("testlog ids and tree terms", () => {
+	it("testlog keeps a capped index of test ids", async () => {
+		const { testlogView } = await import("../src/views.ts");
+		const log = ["============ test session starts ============", "collected 100 items", ...Array.from({ length: 100 }, (_, i) => `tests/test_x.py::test_case_${i} PASSED   [${i}%]`), "============ 100 passed in 1.2s ============"].join("\n");
+		const v = testlogView(log)!;
+		expect(v.text).toContain("test_case_0 PASSED");
+		expect(v.text).toContain("test_case_39 PASSED");
+		expect(v.text).not.toContain("test_case_60 PASSED");
+		expect(v.text).toContain("100 passed");
+	});
+	it("tree keeps entries matching task terms", async () => {
+		const { treeView } = await import("../src/views.ts");
+		const listing = "/repo/\n" + Array.from({ length: 40 }, (_, i) => `/repo/tests/test_${i}.py`).join("\n") + "\n/repo/tests/test_obj_loader.py\n";
+		const v = treeView(listing, 8, ["obj_loader"])!;
+		expect(v.text).toContain("test_obj_loader.py");
+		expect(v.text).not.toContain("test_30.py");
+	});
+});
