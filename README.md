@@ -17,8 +17,9 @@ The extension has three complementary layers, all enabled by default:
 
 Large text tool results (default: at least 1200 estimated tokens, estimated as characters / 4) are considered for
 compression in pi's `tool_result` hook. Results containing images and calls to `recall` are excluded. Code builds
-candidate **views** from the output, with line numbers and omission markers. Code views preserve retained lines
-exactly; the `testlog` view may shorten or normalize log lines. Full text is still sent when no suitable reduced view
+candidate **views** from the output, with line numbers and omission markers. Views of code and prose preserve
+retained lines exactly, so edits copied from a view still match the file; views of command output, listings and
+data shorten decorative bars, long runs of spaces and very long lines. Full text is still sent when no suitable reduced view
 is available or classification fails. A conservative subset of bash file displays (`cat a.py b.py`,
 `sed -n '1,80p' x.ts`, line-limited `head`/`tail`, brace groups and globs) gets code or prose views when all displayed
 files have that type. Pipelines may only filter stdin with recognized options. Redirections, substitutions, modifying

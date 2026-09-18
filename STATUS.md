@@ -295,6 +295,20 @@ Five bash results became code; jev compressed three of them to `relevant` (3.8k 
 
 **Holdout benchmark** (`eval/bench/holdout-v13-bash-display.md`): 78.9 % saved, 0/15 edit-miss, 4 quote-miss, 16 ref-miss, objective 75.4, against 78.6 % / 75.2 for the previous default. No result changed kind: the OpenHands agent reads through its own file tool, so this is run-to-run noise and confirms no regression.
 
+## Exact lines for code, tidy for command output (2026-09-18, late evening)
+
+The safety commit (`2813739`) stopped shortening lines in every view except `testlog`, so that an `edit` whose oldText was copied from a view still matches the file. Measured on the holdout with the same (new) scorer, that cost 4.6 points: 78.0 % → 73.4 % saved, 92k more tokens sent, with no miss metric improving (edit-miss 0/15 both). Row by row, `signals` views of the same results tripled in size because pytest's `=====` bars and long lines were no longer collapsed; 37 results shifted from `signals` to `testlog` and 23 lost every reduced candidate.
+
+The split is now by content kind: views of code and prose keep retained lines exactly; views of command output, listings and data pass through `tidyLine`, since that output is never edited. Same scorer, same slice (`eval/bench/holdout-v14-notidy.md` and `holdout-v15-tidy-command-only.md`):
+
+| variant | saved | sent | edit-miss | quote-miss | ref-miss | objective |
+|---|---|---|---|---|---|---|
+| before the safety commit | 78.0 % | 496.6k | 0/15 | 3 | 16 | 74.8 |
+| safety commit (no tidy) | 73.4 % | 588.3k | 0/15 | 4 | 17 | 69.6 |
+| tidy for command/listing/data only | 78.2 % | 492.3k | 0/15 | 4 | 16 | 74.7 |
+
+The new scorer also checks bash file displays for edit-miss (with re-reads excluded). On the five Astra sessions it finds 1 edit-miss in 3 checked edits across all three variants: `cat semantic.py; cat cli.py; cat polymarket.py` compressed to `relevant`, and the agent then edited a block that was left out. One sample, but it is the exact risk of typing bash displays as code, and the earlier scorer could not see it. The two-turn expansion step is the place to fix it, not the parser.
+
 ## What to try next
 
 1. **Pre-send judgment**: built, see above. Next are more view types and learned thresholds.

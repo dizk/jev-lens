@@ -120,11 +120,11 @@ export function fullView(text: string): View {
 	return { kind: "full", text, lines: lines.length, chars: text.length, included: lines.map((_, i) => i + 1) };
 }
 
-export function headTailView(text: string, head = 40, tail = 20): View {
+export function headTailView(text: string, head = 40, tail = 20, tidy = false): View {
 	const lines = text.split("\n");
 	if (lines.length <= head + tail + 5) return fullView(text);
 	const idx = [...Array.from({ length: head }, (_, i) => i), ...Array.from({ length: tail }, (_, i) => lines.length - tail + i)];
-	return make("head_tail", lines, idx);
+	return make("head_tail", lines, idx, tidy);
 }
 
 /** Code and prose structure: signatures, exports, imports, doc comments, headings. */
@@ -139,7 +139,7 @@ export function outlineView(text: string, kind: ContentKind): View {
 }
 
 /** Lines mentioning any of the given terms, with context. */
-export function focusView(text: string, terms: string[], ctx = 3): View | undefined {
+export function focusView(text: string, terms: string[], ctx = 3, tidy = false): View | undefined {
 	const t = terms.map((x) => x.trim()).filter((x) => x.length >= 3);
 	if (t.length === 0) return undefined;
 	const lines = text.split("\n");
@@ -152,18 +152,18 @@ export function focusView(text: string, terms: string[], ctx = 3): View | undefi
 	if (hits.size === 0) return undefined;
 	const idx = withContext(lines, hits, ctx);
 	if (idx.length >= lines.length * 0.8) return undefined;
-	return make("focus", lines, idx);
+	return make("focus", lines, idx, tidy);
 }
 
 /** Command output: error/warning/summary lines with context, plus the tail. */
-export function signalsView(text: string, ctx = 2, tail = 8): View {
+export function signalsView(text: string, ctx = 2, tail = 8, tidy = true): View {
 	const lines = text.split("\n");
 	const hits = new Set<number>();
 	for (let i = 0; i < lines.length; i++) if (SIGNAL_RE.test(lines[i])) hits.add(i);
 	for (let i = Math.max(0, lines.length - tail); i < lines.length; i++) hits.add(i);
 	const idx = withContext(lines, hits, ctx);
 	if (idx.length >= lines.length * 0.8) return fullView(text);
-	return make("signals", lines, idx);
+	return make("signals", lines, idx, tidy);
 }
 
 const TEST_MARKERS = /test session starts|passed|failed|FAILED|ERROR|✖|✔|not ok|^ok \d|Tests:|Test Suites:|# (pass|fail|tests)|PASS |FAIL |AssertionError|assert /m;
@@ -231,7 +231,7 @@ export function testlogView(text: string, ctx = 2, maxFailLines = 60, maxIds = 2
  * Directory listings and find output: group paths by directory, keep the first entries of each
  * directory and say how many more there are. Directories with many files (tests, fixtures) collapse.
  */
-export function treeView(text: string, perDir = 8, terms: string[] = []): View | undefined {
+export function treeView(text: string, perDir = 8, terms: string[] = [], tidy = true): View | undefined {
 	const lines = text.split("\n");
 	const lowered = terms.map((t) => t.toLowerCase()).filter((t) => t.length >= 4);
 	const byDir = new Map<string, number[]>();
@@ -258,7 +258,7 @@ export function treeView(text: string, perDir = 8, terms: string[] = []): View |
 	}
 	const idx = [...keep].sort((a, b) => a - b);
 	if (idx.length >= lines.length * 0.8) return undefined;
-	return make("tree", lines, idx);
+	return make("tree", lines, idx, tidy);
 }
 
 const GREP_LINE = /^([^:\s][^:]*?):(\d+)[:-]/;
@@ -267,7 +267,7 @@ const GREP_LINE = /^([^:\s][^:]*?):(\d+)[:-]/;
  * grep / rg / git grep output (path:line:content): keep the first matches of every file and say how
  * many more each file has. Files are what the agent navigates by; the tail of a long match list rarely matters.
  */
-export function matchesView(text: string, perFile = 6): View | undefined {
+export function matchesView(text: string, perFile = 6, tidy = true): View | undefined {
 	const lines = text.split("\n");
 	let grepLines = 0;
 	const byFile = new Map<string, number[]>();
@@ -285,7 +285,7 @@ export function matchesView(text: string, perFile = 6): View | undefined {
 	for (const idx of byFile.values()) for (const i of idx.slice(0, perFile)) keep.add(i);
 	const idx = [...keep].sort((a, b) => a - b);
 	if (idx.length >= lines.length * 0.8) return undefined;
-	return make("matches", lines, idx);
+	return make("matches", lines, idx, tidy);
 }
 
 /** Normalise a log line to its template: numbers, hex, timestamps and quoted strings removed. */
@@ -297,7 +297,7 @@ function lineTemplate(l: string): string {
  * Log-like output (scripts, servers, repeated progress lines): keep the first two and the last
  * occurrence of every line template, so repeated lines collapse while the story stays readable.
  */
-export function logView(text: string): View | undefined {
+export function logView(text: string, tidy = true): View | undefined {
 	const lines = text.split("\n");
 	if (lines.length < 40) return undefined;
 	const seen = new Map<string, number[]>();
@@ -316,15 +316,15 @@ export function logView(text: string): View | undefined {
 	for (let i = Math.max(0, lines.length - 5); i < lines.length; i++) keep.add(i);
 	const idx = [...keep].sort((a, b) => a - b);
 	if (idx.length >= lines.length * 0.8) return undefined;
-	return make("log", lines, idx);
+	return make("log", lines, idx, tidy);
 }
 
 /** Data files: header plus a sample of rows and the count. */
-export function sampleView(text: string, rows = 12): View {
+export function sampleView(text: string, rows = 12, tidy = true): View {
 	const lines = text.split("\n");
 	if (lines.length <= rows + 6) return fullView(text);
 	const idx = [...Array.from({ length: rows }, (_, i) => i), lines.length - 2, lines.length - 1].filter((i, k, arr) => i >= 0 && arr.indexOf(i) === k);
-	return make("sample", lines, idx);
+	return make("sample", lines, idx, tidy);
 }
 
 /** Pull identifier-like terms out of task text and tool arguments to drive the focus view. */
@@ -385,15 +385,19 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 		if (cands.some((c) => c.kind === v.kind)) return;
 		cands.push(v);
 	};
+	// Code and prose views keep every retained line exactly, so an edit whose oldText was copied from the view
+	// still matches the file. Command, listing and data output is never edited, so decorative bars, long runs
+	// of spaces and very long lines are shortened there (tidyLine); that is what keeps signals/log views small.
+	const tidy = kind === "command" || kind === "listing" || kind === "data";
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
 	if (kind === "command") add(testlogView(text, P.signalsCtx, P.testFailLines, P.testIds));
-	if (kind === "command" || kind === "listing") add(matchesView(text, P.matchesPerFile));
-	if (kind === "command" && P.logView) add(logView(text));
-	if (kind === "listing") add(treeView(text, 8, terms));
-	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
-	if (kind === "data") add(sampleView(text, P.sampleRows));
-	add(focusView(text, terms, P.focusCtx));
-	add(headTailView(text, P.headLines, P.tailLines));
+	if (kind === "command" || kind === "listing") add(matchesView(text, P.matchesPerFile, tidy));
+	if (kind === "command" && P.logView) add(logView(text, tidy));
+	if (kind === "listing") add(treeView(text, 8, terms, tidy));
+	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail, tidy));
+	if (kind === "data") add(sampleView(text, P.sampleRows, tidy));
+	add(focusView(text, terms, P.focusCtx, tidy));
+	add(headTailView(text, P.headLines, P.tailLines, tidy));
 	return { kind, views: cands };
 }
 
