@@ -106,3 +106,18 @@ describe("testlog view", () => {
 		expect(testlogView("hello world\nno tests here")).toBeUndefined();
 	});
 });
+
+describe("tree view", () => {
+	it("detects listings and collapses big directories", async () => {
+		const { detectKind, treeView } = await import("../src/views.ts");
+		const listing = "Here's the files and directories up to 2 levels deep in /workspace, excluding hidden items:\n/workspace/\n/workspace/repo/\n/workspace/repo/README.md\n/workspace/repo/setup.py\n/workspace/repo/src/\n" + Array.from({ length: 40 }, (_, i) => `/workspace/repo/src/mod${i}.py`).join("\n") + "\n" + Array.from({ length: 30 }, (_, i) => `/workspace/repo/tests/test_${i}.py`).join("\n") + "\n";
+		expect(detectKind("read", { path: "/workspace" }, listing)).toBe("listing");
+		const v = treeView(listing)!;
+		expect(v.kind).toBe("tree");
+		expect(v.text).toContain("/workspace/repo/README.md");
+		expect(v.text).toContain("mod0.py");
+		expect(v.text).not.toContain("mod30.py");
+		expect(v.text).toContain("lines omitted");
+		expect(v.lines).toBeLessThan(30);
+	});
+});

@@ -3,7 +3,7 @@
  * text (never generated), with line numbers so the agent can ask for exact ranges later.
  */
 
-export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "sample" | "head_tail";
+export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "tree" | "sample" | "head_tail";
 
 export interface View {
 	kind: ViewKind;
@@ -24,6 +24,7 @@ const PROSE_EXT = /\.(md|txt|rst|adoc)$/i;
 export function detectKind(toolName: string, args: unknown, text: string): ContentKind {
 	const a = (args ?? {}) as Record<string, unknown>;
 	const path = typeof a.path === "string" ? a.path : "";
+	if (/^Here's the files and directories up to \d+ levels deep/.test(text) || looksLikePathList(text)) return "listing";
 	if (toolName === "bash" || toolName === "powershell") return "command";
 	if (toolName === "ls" || toolName === "find" || toolName === "grep") return "listing";
 	if (CODE_EXT.test(path)) return "code";
@@ -32,6 +33,14 @@ export function detectKind(toolName: string, args: unknown, text: string): Conte
 	if (looksRepetitive(text)) return "data";
 	if (SIG_RE.test(text)) return "code";
 	return "prose";
+}
+
+/** Mostly lines that are file paths → a directory listing or find output. */
+export function looksLikePathList(text: string): boolean {
+	const lines = text.split("\n").filter((l) => l.trim()).slice(0, 300);
+	if (lines.length < 15) return false;
+	const pathy = lines.filter((l) => /^\s*[\w./-]+\/[\w./-]*$/.test(l.trim()) || /^\s*\S+\.(py|js|ts|md|json|txt|yml|yaml|toml|cfg|ini|rs|go|java|c|h)$/.test(l.trim())).length;
+	return pathy / lines.length > 0.7;
 }
 
 /** Many lines with the same delimiter count → tabular or log-like data. */
@@ -173,6 +182,30 @@ export function testlogView(text: string, ctx = 2, maxFailLines = 60): View | un
 	return make("testlog", lines, idx);
 }
 
+/**
+ * Directory listings and find output: group paths by directory, keep the first entries of each
+ * directory and say how many more there are. Directories with many files (tests, fixtures) collapse.
+ */
+export function treeView(text: string, perDir = 8): View | undefined {
+	const lines = text.split("\n");
+	const byDir = new Map<string, number[]>();
+	for (let i = 0; i < lines.length; i++) {
+		const t = lines[i].trim();
+		if (!t) continue;
+		const path = t.replace(/\/$/, "");
+		const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+		if (!byDir.has(dir)) byDir.set(dir, []);
+		byDir.get(dir)!.push(i);
+	}
+	if (byDir.size < 2) return undefined;
+	const keep = new Set<number>();
+	for (let i = 0; i < Math.min(2, lines.length); i++) if (!/^\s*[\w./-]+\/?$/.test(lines[i].trim())) keep.add(i);
+	for (const idx of byDir.values()) for (const i of idx.slice(0, perDir)) keep.add(i);
+	const idx = [...keep].sort((a, b) => a - b);
+	if (idx.length >= lines.length * 0.8) return undefined;
+	return make("tree", lines, idx);
+}
+
 /** Data files: header plus a sample of rows and the count. */
 export function sampleView(text: string, rows = 12): View {
 	const lines = text.split("\n");
@@ -233,6 +266,7 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 	};
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
 	if (kind === "command") add(testlogView(text, P.signalsCtx));
+	if (kind === "listing") add(treeView(text));
 	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
 	if (kind === "data") add(sampleView(text, P.sampleRows));
 	add(focusView(text, terms, P.focusCtx));

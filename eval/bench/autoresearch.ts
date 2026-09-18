@@ -46,7 +46,7 @@ async function main() {
 		console.error(`[autoresearch] baseline objective ${summary.objective.toFixed(2)} saved ${summary.savedPct.toFixed(1)}% editMiss ${summary.editMissPct.toFixed(1)}%`);
 	}
 	for (let it = 0; it < iterations; it++) {
-		const recent = history.slice(-8).map((h) => ({ name: h.variant.name, hypothesis: (h.variant as { hypothesis?: string }).hypothesis, changed: { config: h.variant.config, prompts: h.variant.prompts ? Object.keys(h.variant.prompts) : undefined, views: h.variant.views }, objective: h.summary.objective, savedPct: h.summary.savedPct, editMissPct: h.summary.editMissPct, quoteMissPct: h.summary.quoteMissPct, byKind: h.summary.byKind, views: h.summary.views, kept: h.kept }));
+		const recent = history.slice(-8).map((h) => ({ name: h.variant.name, hypothesis: (h.variant as { hypothesis?: string }).hypothesis, changed: { config: h.variant.config, prompts: h.variant.prompts ? Object.keys(h.variant.prompts) : undefined, views: h.variant.views }, objective: h.summary.objective, savedPct: h.summary.savedPct, editMissPct: h.summary.editMissPct, quoteMissPct: h.summary.quoteMissPct, refMissPct: h.summary.refMissPct, byKind: h.summary.byKind, views: h.summary.views, kept: h.kept }));
 		const prompt = `${program}\n\n## Current best variant\n\n${JSON.stringify(best.variant, null, 1)}\n\nBest objective: ${best.objective.toFixed(2)}\n\n## Current default prompt texts (for reference, edit by putting new text in the variant)\n\n${readFileSync(join(ROOT, "src", "presend.ts"), "utf8").match(/export const DEFAULT_PROMPTS[\s\S]*?\n};/)?.[0] ?? ""}\n\n## View descriptions in use\n\n${readFileSync(join(ROOT, "src", "presend.ts"), "utf8").match(/const VIEW_DESCRIPTIONS[\s\S]*?\n};/)?.[0] ?? ""}\n\n## History (most recent last)\n\n${JSON.stringify(recent, null, 1)}\n\nPropose the next variant as JSON.`;
 		console.error(`[autoresearch] iteration ${it + 1}/${iterations}: asking ${researcher}`);
 		const variant = askResearcher(researcher, prompt);
@@ -56,7 +56,7 @@ async function main() {
 		const t0 = Date.now();
 		const { summary } = await runBenchmark({ from, to, concurrency, variant, mock: false, maxPerTraj: 12, quiet: true });
 		const kept = summary.objective > best.objective + 0.3;
-		console.error(`[autoresearch] "${variant.name}" objective ${summary.objective.toFixed(2)} (best ${best.objective.toFixed(2)}) saved ${summary.savedPct.toFixed(1)}% editMiss ${summary.editMissPct.toFixed(1)}% quoteMiss ${summary.quoteMissPct.toFixed(1)}% in ${Math.round((Date.now() - t0) / 1000)}s → ${kept ? "KEEP" : "discard"}`);
+		console.error(`[autoresearch] "${variant.name}" objective ${summary.objective.toFixed(2)} (best ${best.objective.toFixed(2)}) saved ${summary.savedPct.toFixed(1)}% editMiss ${summary.editMissPct.toFixed(1)}% quoteMiss ${summary.quoteMissPct.toFixed(1)}% refMiss ${summary.refMissPct.toFixed(1)}% in ${Math.round((Date.now() - t0) / 1000)}s → ${kept ? "KEEP" : "discard"}`);
 		appendFileSync(logFile, `${JSON.stringify({ variant, summary, kept, t: Date.now() })}\n`);
 		history.push({ variant, summary, kept });
 		if (kept) { best = { variant, objective: summary.objective, summary }; writeFileSync(join(RESEARCH, "best.json"), JSON.stringify(best, null, 1)); }

@@ -32,7 +32,7 @@ export async function runBenchmark(opts: { from: number; to: number; concurrency
 			// cap large results per trajectory so a few huge sessions do not dominate
 			let seen = 0;
 			const msgs = t.messages.filter((m) => { if (m.role !== "toolResult") return true; const big = (((m as { content: unknown }).content as { text?: string }[])[0]?.text?.length ?? 0) / 4 >= cfg.presendMinTokens; if (!big) return true; return seen++ < opts.maxPerTraj; });
-			const r = await scoreMessages(t.id, msgs, presend, cfg, opts.variant.views ?? {}, (row) => { if (!opts.quiet) console.error(`${t.id} ${row.tool} ${row.args.slice(0, 50)} ${row.tokens}t → ${row.view} (${row.viewTokens}t)${row.editMiss ? " EDIT-MISS" : ""}${row.quoteMiss ? " QUOTE-MISS" : ""}`); });
+			const r = await scoreMessages(t.id, msgs, presend, cfg, opts.variant.views ?? {}, (row) => { if (!opts.quiet) console.error(`${t.id} ${row.tool} ${row.args.slice(0, 50)} ${row.tokens}t → ${row.view} (${row.viewTokens}t)${row.editMiss ? " EDIT-MISS" : ""}${row.quoteMiss ? " QUOTE-MISS" : ""}${row.refMiss ? " REF-MISS" : ""}`); });
 			rows.push(...r);
 		}
 	};

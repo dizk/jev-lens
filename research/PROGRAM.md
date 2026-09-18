@@ -7,12 +7,14 @@ view descriptions, thresholds and view parameters. The code that builds views is
 
 ## Objective (higher is better)
 
-`objective = saved% − 5 × edit-miss% − 2 × quote-miss%`, measured on real OpenHands trajectories:
+`objective = saved% − 5 × edit-miss% − 2 × quote-miss% − 1 × ref-miss%`, measured on real OpenHands trajectories:
 
 - **saved%**: tokens not sent across all large tool results (≥ presendMinTokens).
 - **edit-miss%**: among large `read` results that the agent later edited (before re-reading the file), the share where the
   edit's first old-text line was not in the view. This is the harm metric; keep it near 0.
 - **quote-miss%**: share of results where the agent's next message quotes a 40+ char line that only exists in the omitted part.
+- **ref-miss%**: share of results where the agent's next two steps use an identifier that only existed in the omitted part
+  (not in the view, the task, its own reasoning or the tool call): it learned something from what we dropped.
 
 Kinds of results: `command` (bash output, the majority), `code`, `prose`, `data`, `listing`.
 Views: `full`, `outline`, `relevant` (outline + expanded blocks), `focus`, `signals`, `sample`, `head_tail`.

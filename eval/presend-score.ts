@@ -10,7 +10,14 @@ import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "
 
 export interface ScoreRow {
 	session: string; tool: string; args: string; kind: string; tokens: number; view: string; viewTokens: number; chosen: string;
-	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; editsChecked: number; ms: number;
+	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; refMiss: boolean; editsChecked: number; ms: number;
+}
+
+/** Identifier-like tokens (camelCase, snake_case, dotted, 5+ chars) from text and tool arguments. */
+function identifiers(text: string): Set<string> {
+	const out = new Set<string>();
+	for (const m of text.matchAll(/[A-Za-z_][A-Za-z0-9_]{4,}/g)) { const w = m[0]; if (/[A-Z_]/.test(w.slice(1)) || w.length >= 8) out.add(w); }
+	return out;
 }
 
 function omittedText(full: string, view: View): string {
@@ -56,8 +63,12 @@ export async function scoreMessages(
 			try { const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, undefined, cands.blocks); if (ex) view = ex.view; } catch {}
 		}
 		const path = (args as { path?: string })?.path;
-		let editMiss = false, quoteMiss = false, editsChecked = 0;
+		let editMiss = false, quoteMiss = false, editsChecked = 0, refMiss = false;
 		const omitted = omittedText(text, view);
+		// ref-miss: the agent's next two steps use an identifier that exists only in the omitted part
+		// (not in the view, the task, its own earlier reasoning or the tool call), i.e. it learned it from what we dropped.
+		const known = new Set([...identifiers(latestUser), ...identifiers(firstUser), ...identifiers(lastAssistant), ...identifiers(JSON.stringify(args ?? {})), ...identifiers(view.text)]);
+		const omittedIds = view.kind === "full" ? new Set<string>() : identifiers(omitted);
 		// The view is the agent's only knowledge of this output until it reads the same path again
 		// (or for at most 12 assistant messages), so edits of that path in that window are checked.
 		let seen = 0;
@@ -67,6 +78,10 @@ export async function scoreMessages(
 			if (n.role !== "assistant") continue;
 			seen++;
 			if (seen === 1) { const nt = contentText(n.content); for (const s of spans(nt)) if (omitted.includes(s) && !view.text.includes(s)) { quoteMiss = true; break; } }
+			if (seen <= 2 && omittedIds.size) {
+				const used = identifiers(contentText(n.content) + " " + JSON.stringify(n.content.filter((c) => c.type === "toolCall").map((c) => (c as { arguments: unknown }).arguments)));
+				for (const id of used) if (omittedIds.has(id) && !known.has(id)) { refMiss = true; break; }
+			}
 			for (const c of n.content) {
 				if (c.type === "toolCall" && c.name === "read" && path && (c.arguments as { path?: string })?.path === path) reread = true;
 				if (c.type === "toolCall" && c.name === "recall") reread = true;
@@ -81,7 +96,7 @@ export async function scoreMessages(
 				}
 			}
 		}
-		const row: ScoreRow = { session, tool: m.toolName, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, editsChecked, ms: Date.now() - t0 };
+		const row: ScoreRow = { session, tool: m.toolName, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, editsChecked, ms: Date.now() - t0 };
 		rows.push(row);
 		onRow?.(row);
 	}
@@ -90,16 +105,16 @@ export async function scoreMessages(
 
 export interface Summary {
 	results: number; compressed: number; tokens: number; sent: number; savedPct: number;
-	editable: number; editMiss: number; editMissPct: number; quoteMiss: number; quoteMissPct: number;
-	views: Record<string, number>; byKind: Record<string, { n: number; savedPct: number; editMissPct: number }>;
-	/** Objective for autoresearch: saved% minus 5× edit-miss% minus 2× quote-miss% (percentage points). */
+	editable: number; editMiss: number; editMissPct: number; quoteMiss: number; quoteMissPct: number; refMiss: number; refMissPct: number;
+	views: Record<string, number>; byKind: Record<string, { n: number; savedPct: number; editMissPct: number; refMissPct: number }>;
+	/** Objective for autoresearch: saved% minus 5× edit-miss% minus 2× quote-miss% minus 1× ref-miss% (percentage points). */
 	objective: number; meanMs: number;
 }
 
 export function summarize(rows: ScoreRow[]): Summary {
 	const tokens = rows.reduce((a, r) => a + r.tokens, 0), sent = rows.reduce((a, r) => a + r.viewTokens, 0);
 	const editable = rows.filter((r) => r.editsChecked > 0);
-	const editMiss = rows.filter((r) => r.editMiss).length, quoteMiss = rows.filter((r) => r.quoteMiss).length;
+	const editMiss = rows.filter((r) => r.editMiss).length, quoteMiss = rows.filter((r) => r.quoteMiss).length, refMiss = rows.filter((r) => r.refMiss).length;
 	const views: Record<string, number> = {};
 	for (const r of rows) views[r.view] = (views[r.view] ?? 0) + 1;
 	const byKind: Summary["byKind"] = {};
@@ -107,22 +122,23 @@ export function summarize(rows: ScoreRow[]): Summary {
 		const rs = rows.filter((r) => r.kind === kind);
 		const t = rs.reduce((a, r) => a + r.tokens, 0), s = rs.reduce((a, r) => a + r.viewTokens, 0);
 		const ed = rs.filter((r) => r.editsChecked > 0);
-		byKind[kind] = { n: rs.length, savedPct: t ? (100 * (t - s)) / t : 0, editMissPct: ed.length ? (100 * ed.filter((r) => r.editMiss).length) / ed.length : 0 };
+		byKind[kind] = { n: rs.length, savedPct: t ? (100 * (t - s)) / t : 0, editMissPct: ed.length ? (100 * ed.filter((r) => r.editMiss).length) / ed.length : 0, refMissPct: rs.length ? (100 * rs.filter((r) => r.refMiss).length) / rs.length : 0 };
 	}
 	const savedPct = tokens ? (100 * (tokens - sent)) / tokens : 0;
 	const editMissPct = editable.length ? (100 * editMiss) / editable.length : 0;
 	const quoteMissPct = rows.length ? (100 * quoteMiss) / rows.length : 0;
-	return { results: rows.length, compressed: rows.filter((r) => r.view !== "full").length, tokens, sent, savedPct, editable: editable.length, editMiss, editMissPct, quoteMiss, quoteMissPct, views, byKind, objective: savedPct - 5 * editMissPct - 2 * quoteMissPct, meanMs: rows.length ? rows.reduce((a, r) => a + r.ms, 0) / rows.length : 0 };
+	const refMissPct = rows.length ? (100 * refMiss) / rows.length : 0;
+	return { results: rows.length, compressed: rows.filter((r) => r.view !== "full").length, tokens, sent, savedPct, editable: editable.length, editMiss, editMissPct, quoteMiss, quoteMissPct, refMiss, refMissPct, views, byKind, objective: savedPct - 5 * editMissPct - 2 * quoteMissPct - refMissPct, meanMs: rows.length ? rows.reduce((a, r) => a + r.ms, 0) / rows.length : 0 };
 }
 
 export function renderSummary(s: Summary): string {
 	return [
-		"| large results | compressed | tokens | sent | saved | edit-miss (of edited) | quote-miss | objective | views | mean ms |",
-		"|---|---|---|---|---|---|---|---|---|---|",
-		`| ${s.results} | ${s.compressed} | ${(s.tokens / 1000).toFixed(1)}k | ${(s.sent / 1000).toFixed(1)}k | ${s.savedPct.toFixed(1)}% | ${s.editMiss}/${s.editable} (${s.editMissPct.toFixed(1)}%) | ${s.quoteMiss} (${s.quoteMissPct.toFixed(1)}%) | ${s.objective.toFixed(1)} | ${Object.entries(s.views).map(([k, v]) => `${k}:${v}`).join(", ")} | ${Math.round(s.meanMs)} |`,
+		"| large results | compressed | tokens | sent | saved | edit-miss (of edited) | quote-miss | ref-miss | objective | views | mean ms |",
+		"|---|---|---|---|---|---|---|---|---|---|---|",
+		`| ${s.results} | ${s.compressed} | ${(s.tokens / 1000).toFixed(1)}k | ${(s.sent / 1000).toFixed(1)}k | ${s.savedPct.toFixed(1)}% | ${s.editMiss}/${s.editable} (${s.editMissPct.toFixed(1)}%) | ${s.quoteMiss} (${s.quoteMissPct.toFixed(1)}%) | ${s.refMiss} (${s.refMissPct.toFixed(1)}%) | ${s.objective.toFixed(1)} | ${Object.entries(s.views).map(([k, v]) => `${k}:${v}`).join(", ")} | ${Math.round(s.meanMs)} |`,
 		"",
-		"| kind | n | saved | edit-miss |",
-		"|---|---|---|---|",
-		...Object.entries(s.byKind).map(([k, v]) => `| ${k} | ${v.n} | ${v.savedPct.toFixed(1)}% | ${v.editMissPct.toFixed(1)}% |`),
+		"| kind | n | saved | edit-miss | ref-miss |",
+		"|---|---|---|---|---|",
+		...Object.entries(s.byKind).map(([k, v]) => `| ${k} | ${v.n} | ${v.savedPct.toFixed(1)}% | ${v.editMissPct.toFixed(1)}% | ${v.refMissPct.toFixed(1)}% |`),
 	].join("\n");
 }
