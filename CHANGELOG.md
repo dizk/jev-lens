@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-09-19)
+
+- The README and the other documentation are rewritten in plain English. No code changed.
+
 ## 0.2.0 (2026-09-19)
 
 jev-lens now does one thing: compression before the first send.
