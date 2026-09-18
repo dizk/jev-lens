@@ -204,6 +204,36 @@ window, so the cost difference is provider noise, not the variant. Quality is un
 recalls), and compound reads nothing large, so the variant cannot show there. Conclusion as on the benchmark: the
 round-3 variant is indistinguishable from the default; keep the default.
 
+### Round 4: Fable as the researcher (code changes allowed)
+
+I ran the loop by hand with the freedom the model-researchers did not have: new views, not just parameters. Each step
+was scored on train (0 to 99) and only adopted after holdout (200 to 299). Measurements first:
+
+- **jev variance is small** (30 trajectories scored twice): needs-full differs by 0.008 on average, P(full) by 0.016,
+  3.4 % of decisions flip. "Ask twice" was dropped as an idea.
+- **Where the remaining command tokens were**: test runs are 408 of 495 large bash outputs on train (1.7M of 2.0M
+  tokens). Of the 466k command tokens still sent on holdout, 35 % were pytest runs jev sent in full (needs-full 0.53 to
+  0.62 on truncated verbose runs), 35 % were `testlog` views averaging 1.1k tokens, bloated by pytest's column padding
+  (hundreds of spaces per test line) and by library-code frames in tracebacks (`site-packages`, `/opt/conda`).
+
+| step | holdout saved | edit-miss | quote-miss | ref-miss | objective | command | code |
+|---|---|---|---|---|---|---|---|
+| default before this round | 64.7 % | 0/13 | 0.6 % | 1.8 % | 61.7 | 73.2 % | 28.3 % |
+| testlog: collapse padding, drop library frames back to the previous boundary, `_ _ _` chain separators; `matches` view for grep; `log` view for repeated lines | 70.8 % | 0/15 | 0.4 % | 1.9 % | 68.0 | 81.3 % | 27.5 % |
+| + command needs-full threshold 0.65 (train: 0.65 and 0.80 equal) | **74.1 %** | 0/15 | 0.4 % | 1.9 % | **71.4** | 85.2 % | 27.5 % |
+| + code gate 0.6 so unsure code goes to outline + block expansion (train +0.2) | 73.5 % | 0/15 | 0.4 % | 1.9 % | 70.7 | 85.2 % | 25.1 % → discarded |
+
+The library-frame rule is the single biggest step in the whole project (+6 points on holdout, zero new misses): on the
+worst example a 30k-character pytest run went from a 12.3k-character view to 5.1k with every repo frame and assertion
+kept. The `matches` and `log` views barely fire on this dataset (2 and 4 of 689) but cost nothing.
+
+What is left: code is 128 of 689 results and 338k tokens, 82 of them sent in full although only 12 were later edited.
+jev's needs-full sits at 0.3 to 0.6 for those, which is honest: the OpenHands agent reads many files before deciding
+what to edit, and the benchmark cannot tell which read mattered. Routing the unsure ones to outline + expansion did not
+help on holdout. The next lever there is the second step itself: expand by *task relevance of the block* rather than
+"will it need the body", or send outline first and let `recall` fetch bodies on demand, which the live extension
+already supports and this benchmark cannot score.
+
 ## Procedural graph prototype (`eval/action-graph.ts`)
 
 Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
