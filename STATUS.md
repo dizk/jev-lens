@@ -342,9 +342,26 @@ The winner transfers this time (+2.0 on holdout against +1.2 on train), unlike r
 
 **Left open.** The Astra ref-miss at floor 0.3 and the edit-miss both come from the expansion step keeping too little of code-like output; the expansion threshold (0.5) is the next knob, and a two-turn look-back (did the agent edit a file it read through bash) would make the scorer's edit-miss the training signal for it.
 
+## Expansion thresholds: sweep says leave them at 0.5 (2026-09-18, late night)
+
+The open item after the sections work was the second step's threshold: the Astra edit-miss came from a block jev scored 0.39 (`def proposals` in `semantic.py`, edited five messages later; the four other edited blocks scored 0.53 to 0.79), and the Astra ref-miss from a section under 0.5. Both thresholds were swept on the holdout and on the Astra replay (`eval/bench/holdout-v20-expand-*`):
+
+| threshold | holdout objective | holdout saved | holdout ref-miss | Astra saved | Astra edit-miss | Astra ref-miss |
+|---|---|---|---|---|---|---|
+| code 0.35 | 75.8 | 79.9 % | 20 | 28 % (code 6 %) | 1/9 | 2 |
+| code 0.5 (default) | 77.7 | 81.7 % | 20 | 35 % (code 13 %) | 1/9 | 2 |
+| code 0.65 | 78.5 | 83.1 % | 22 | 41 % (code 52 %) | 2/9 | 4 |
+| sections 0.35 | 77.0 | 80.9 % | 19 | 26 % | 1/9 | 1 |
+| sections 0.5 (default) | 77.7 | 81.7 % | 20 | 35 % | 1/9 | 2 |
+| sections 0.65 | 77.8 | 81.7 % | 19 | 35 % | 1/9 | 4 |
+
+Reading: the holdout objective prefers raising the code threshold, but the holdout has 15 editable code results and zero misses at every setting, so it cannot see the edit risk; the Astra replay can, and there 0.65 doubles the edit-misses. Lowering to 0.35 halves the code savings and still does not catch the 0.39 block, because jev's per-block numbers move by about ±0.2 between identical runs. A threshold is too blunt for the last miss; the next lever is structural (expand blocks referenced by an expanded block, or blocks named in the task), not numeric. Both stay at 0.5.
+
+The scorer already checks edits of files read through bash within the next 12 assistant messages, excluding re-reads, so the edit-miss is a usable training signal for that lever; what is missing is volume: one edit-miss in the Astra sessions and none on the holdout.
+
 ## What to try next
 
-1. **Pre-send judgment**: built, see above. Next are more view types and learned thresholds.
+1. **Pre-send judgment**: built, see above. Next: let the autoresearch researcher write view builders (one per content kind, sandboxed, verified as strict line subsets) instead of only prompt text and thresholds; three rounds of the latter transferred nothing, every code-built view did. And a structural rule for the second step: expand blocks referenced by an expanded block or named in the task.
 2. **Two-turn evidence** before a forget: only forget once the agent has produced two later assistant messages without touching the item, or lower `JEV_MEMORY_FORGET_BELOW` to 0.15.
 3. **Run the replay harness on real, long pi sessions** from `~/.pi/agent/sessions` once there are some; every number above comes from synthetic tasks under 35 calls.
 4. Tune `JEV_MEMORY_BUDGET_FRACTION` (0.5 assumes about 18 more calls will follow; 0.25 assumes 36) or trigger on context percentage instead, so budget mode actually fires in hour-long sessions before compaction does.
