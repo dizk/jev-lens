@@ -1,22 +1,44 @@
 {
   "name": "pi-jev-context",
   "version": "0.1.0",
-  "description": "pi extension: jev-classified, cache-aware memory routing (context / file / forget)",
-  "type": "module",
-  "main": "index.ts",
-  "scripts": {
-    "test": "vitest run",
-    "replay": "node --import tsx eval/replay.ts",
-    "typecheck": "tsc --noEmit"
+  "description": "pi extension that compresses large tool results before they reach the model: jev picks the view (outline, relevant blocks, sections, signals, testlog), full text stays recallable",
+  "author": "Didrik Rognstad",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dizk/pi-jev-context.git"
+  },
+  "homepage": "https://github.com/dizk/pi-jev-context#readme",
+  "bugs": {
+    "url": "https://github.com/dizk/pi-jev-context/issues"
   },
   "keywords": [
     "pi-package",
     "pi-extension",
     "typesafe",
     "jev",
-    "memory"
+    "context",
+    "compression",
+    "prompt-cache",
+    "tool-output"
   ],
-  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "README.md",
+    "LICENSE",
+    "STATUS.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "replay": "node --import tsx eval/replay.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
@@ -24,17 +46,22 @@
   },
   "dependencies": {
     "@binclusive/tree-sitter-kotlin-wasm": "^0.1.0",
-    "@earendil-works/pi-coding-agent": "^0.84.3",
-    "@earendil-works/pi-tui": "^0.84.3",
     "@typesafe-ai/sdk": "^0.6.0",
     "@vscode/tree-sitter-wasm": "^0.3.1",
-    "typebox": "^1.3.33",
     "web-tree-sitter": "^0.27.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@earendil-works/pi-tui": "^0.84.3",
+    "typebox": "^1.3.33"
   }
 }

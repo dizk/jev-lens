@@ -97,13 +97,19 @@ note does not remove its source from the prompt.
 ## Install
 
 ```sh
-git clone https://github.com/dizk/pi-jev-context.git ~/repos/pi-jev-context
-cd ~/repos/pi-jev-context && npm install
-echo 'TYPESAFE_API_KEY=...' > .env
-pi -e ~/repos/pi-jev-context/index.ts
+pi install npm:pi-jev-context            # from npm
+pi install git:github.com/dizk/pi-jev-context   # or straight from GitHub
 ```
 
-Without a key the extension runs with a mock classifier and warns at startup.
+The classifier is [jev](https://typesafe.ai), TypeSafe's System One model. Put your key in the environment
+(`export TYPESAFE_API_KEY=...`) or in a `.env` file next to the installed package; without a key the extension runs
+with a mock classifier and warns at startup. For development, clone the repo and load it directly:
+
+```sh
+git clone https://github.com/dizk/pi-jev-context.git && cd pi-jev-context && npm install
+echo 'TYPESAFE_API_KEY=...' > .env
+pi -e ./index.ts
+```
 
 Inside pi: `/jev-context` shows stats, `/jev-context list` lists the latest 200 pre-send-compressed tool results with tokens
 before and after, `/jev-context diff [n]` opens an overlay for the n-th latest one showing the original output with the
@@ -213,3 +219,13 @@ policy, and optionally expand code blocks in a second request. If a reduced view
 view plus a footer naming `recall`, and keep the full text in result details. Post-send classification then decides
 whether to keep, trim or stub eligible results. Persist and re-apply those decisions to avoid repeated changes to
 already-transformed messages. Never remove a tool result, only rewrite it.
+
+## Contributing and license
+
+Issues and pull requests are welcome at [github.com/dizk/pi-jev-context](https://github.com/dizk/pi-jev-context).
+`npm test` runs the unit tests with the mock classifier; `npm run typecheck` runs tsc. Changes to how views are built
+or chosen should come with benchmark numbers (see [Evaluation](#evaluation)); anything that touches code views must be
+scored on the 500-trajectory slice, not only the 100-trajectory holdout, because edit-misses are rare and expensive.
+STATUS.md is the research log: what was tried, what the numbers said, and why the defaults are what they are.
+
+MIT, see LICENSE.
