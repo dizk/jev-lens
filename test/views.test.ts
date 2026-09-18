@@ -82,7 +82,7 @@ describe("displayedFiles", () => {
 		expect(displayedFiles("cat a.py | wc -l")).toBeUndefined();
 		expect(displayedFiles("uv run python - <<'PY'\nprint(1)\nPY")).toBeUndefined();
 		expect(displayedFiles("cat")).toBeUndefined();
-		expect(kindOfFiles(["a.py", "README.md"])).toBe("code");
+		expect(kindOfFiles(["a.py", "README.md"])).toBeUndefined();
 		expect(kindOfFiles(["a.md", "b.txt"])).toBe("prose");
 		expect(kindOfFiles(["a.json"])).toBeUndefined();
 	});

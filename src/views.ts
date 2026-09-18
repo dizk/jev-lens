@@ -20,41 +20,8 @@ const CODE_EXT = /\.(js|mjs|cjs|ts|tsx|jsx|py|go|rs|java|kt|kts|rb|php|c|h|cc|cp
 const DATA_EXT = /\.(csv|tsv|jsonl|ndjson|log|json|xml|yaml|yml|toml)$/i;
 const PROSE_EXT = /\.(md|txt|rst|adoc)$/i;
 
-const DISPLAY_CMDS = new Set(["cat", "sed", "head", "tail", "nl", "bat", "less", "more"]);
-const FILTER_CMDS = new Set(["head", "tail", "sed", "nl", "cat"]);
-
-/**
- * Files shown by a shell command that only displays file contents: `cat a.py b.py`, `sed -n '1,80p' x.ts`,
- * `head -50 f.go | tail -20`, `cat src/{a,b}.py`, `cat tests/*.py`, joined with `;`, `&&` or newlines.
- * Brace groups are expanded; globs are kept as written (their extension still tells the kind).
- * Returns undefined when any segment is not such a display (so the output is not a plain file view).
- */
-export function displayedFiles(command: string): string[] | undefined {
-	const files: string[] = [];
-	const segments = command.split(/\s*(?:;|&&|\|\||\n)\s*/).filter((s) => s.trim());
-	if (segments.length === 0) return undefined;
-	for (const seg of segments) {
-		const stages = seg.split(/\s\|\s/);
-		for (let k = 0; k < stages.length; k++) {
-			const toks = [...stages[k].matchAll(/'[^']*'|"[^"]*"|\S+/g)].map((m) => m[0]);
-			const cmd = toks[0]?.replace(/^.*\//, "");
-			if (!cmd || !(k === 0 ? DISPLAY_CMDS : FILTER_CMDS).has(cmd)) return undefined;
-			if (k > 0) continue;
-			for (const raw of toks.slice(1)) {
-				const t = raw.replace(/^['"]|['"]$/g, "");
-				if (t.startsWith("-") || /[<>`$]/.test(t)) continue;
-				for (const f of expandBraces(t)) if (/\.[A-Za-z0-9]+$/.test(f)) files.push(f);
-			}
-		}
-	}
-	return files.length ? files : undefined;
-}
-
-function expandBraces(t: string): string[] {
-	const m = /^(.*?)\{([^{}]*)\}(.*)$/.exec(t);
-	if (!m || !m[2].includes(",")) return [t];
-	return m[2].split(",").flatMap((alt) => expandBraces(m[1] + alt + m[3]));
-}
+import { displayedFiles } from "./shell-display.ts";
+export { displayedFiles } from "./shell-display.ts";
 
 function countLines(text: string, re: RegExp, max = 400): number {
 	let n = 0;
@@ -62,9 +29,10 @@ function countLines(text: string, re: RegExp, max = 400): number {
 	return n;
 }
 
-/** Kind of a set of displayed files: code if any is source, prose if all are docs, else undefined. */
+/** Mixed or unknown file types retain the ordinary command policy. */
 export function kindOfFiles(files: string[]): ContentKind | undefined {
-	if (files.some((f) => CODE_EXT.test(f))) return "code";
+	if (files.length === 0) return undefined;
+	if (files.every((f) => CODE_EXT.test(f))) return "code";
 	if (files.every((f) => PROSE_EXT.test(f))) return "prose";
 	return undefined;
 }
@@ -76,7 +44,7 @@ export function detectKind(toolName: string, args: unknown, text: string): Conte
 	if (/^Here's the files and directories up to \d+ levels deep/.test(text) || looksLikePathList(text)) return "listing";
 	if (toolName === "bash" || toolName === "powershell") {
 		// Agents that read files with cat/sed/head get the code and prose views, not the command ones.
-		const shown = typeof a.command === "string" ? displayedFiles(a.command) : undefined;
+		const shown = toolName === "bash" && typeof a.command === "string" ? displayedFiles(a.command) : undefined;
 		const shownKind = shown ? kindOfFiles(shown) : undefined;
 		if (shownKind === "code" && countLines(text, SIG_RE) >= 3) return "code";
 		if (shownKind === "prose" && countLines(text, HEADING_RE) >= 2) return "prose";
@@ -123,13 +91,13 @@ export function tidyLine(l: string): string {
 	return out;
 }
 
-function numbered(lines: string[], idx: number[]): string {
+function numbered(lines: string[], idx: number[], tidy = false): string {
 	const width = String(lines.length).length;
 	const out: string[] = [];
 	let prev = -1;
 	for (const i of idx) {
 		if (prev >= 0 && i > prev + 1) out.push(`${" ".repeat(width)}  ⋯ ${i - prev - 1} lines omitted`);
-		out.push(`${String(i + 1).padStart(width)}│ ${tidyLine(lines[i])}`);
+		out.push(`${String(i + 1).padStart(width)}│ ${tidy ? tidyLine(lines[i]) : lines[i]}`);
 		prev = i;
 	}
 	if (prev >= 0 && prev < lines.length - 1) out.push(`${" ".repeat(width)}  ⋯ ${lines.length - 1 - prev} lines omitted`);
@@ -142,8 +110,8 @@ function withContext(lines: string[], hits: Set<number>, ctx: number): number[] 
 	return [...keep].sort((a, b) => a - b);
 }
 
-function make(kind: ViewKind, lines: string[], idx: number[]): View {
-	const text = numbered(lines, idx);
+function make(kind: ViewKind, lines: string[], idx: number[], tidy = false): View {
+	const text = numbered(lines, idx, tidy);
 	return { kind, text, lines: idx.length, chars: text.length, included: idx.map((i) => i + 1) };
 }
 
@@ -256,7 +224,7 @@ export function testlogView(text: string, ctx = 2, maxFailLines = 60, maxIds = 2
 	for (let i = Math.max(0, lines.length - 5); i < lines.length; i++) keep.add(i);
 	const idx = [...keep].sort((a, b) => a - b);
 	if (idx.length >= lines.length * 0.8) return undefined;
-	return make("testlog", lines, idx);
+	return make("testlog", lines, idx, true);
 }
 
 /**

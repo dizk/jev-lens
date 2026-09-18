@@ -17,11 +17,12 @@ The extension has three complementary layers, all enabled by default:
 
 Large text tool results (default: at least 1200 estimated tokens, estimated as characters / 4) are considered for
 compression in pi's `tool_result` hook. Results containing images and calls to `recall` are excluded. Code builds
-candidate **views** from the output, with line numbers; some lines are shortened or normalized, and omission markers
-are added. Full text is still sent when no suitable reduced view is available or classification fails. Shell
-commands that only display files (`cat a.py b.py`, `sed -n '1,80p' x.ts`, `head`, brace groups, globs, pipelines
-into `head`/`tail`/`sed`) count as code or prose, not command output, so agents that read through bash get the same
-views as `read`:
+candidate **views** from the output, with line numbers and omission markers. Code views preserve retained lines
+exactly; the `testlog` view may shorten or normalize log lines. Full text is still sent when no suitable reduced view
+is available or classification fails. A conservative subset of bash file displays (`cat a.py b.py`,
+`sed -n '1,80p' x.ts`, line-limited `head`/`tail`, brace groups and globs) gets code or prose views when all displayed
+files have that type. Pipelines may only filter stdin with recognized options. Redirections, substitutions, modifying
+`sed` scripts, mixed code/non-code files and unsupported syntax retain ordinary command handling:
 
 | view | for | keeps |
 |---|---|---|
@@ -65,7 +66,7 @@ This is a secondary pass, not the source of the initial pre-send savings. It cla
 Prompt caches match on an exact prefix. Any edit to an already-sent message invalidates the cache from that point on.
 The extension limits repeated rewrites using persisted decisions:
 
-1. **Classify after reaction.** Tool results of at least `JEV_MEMORY_MIN_TOKENS` are queued for classification after
+1. **Classify after reaction.** Text-only tool results of at least `JEV_MEMORY_MIN_TOKENS` are queued for classification after
    the next assistant message supplies evidence of what happened next. Results still buffered at agent end are
    classified without that reaction. Results with an existing decision or an in-flight classification are skipped.
 2. **Apply, then freeze the decision.** The `context` hook waits briefly for in-flight classifications and applies
@@ -85,8 +86,11 @@ Tool results are never removed, only rewritten, because every `function_call` mu
 ## Durable notes (cross-session memory)
 
 Separately from compression and pruning, jev assesses whether content is worth remembering across sessions.
-Selected notes are written to `<project>/.pi/jev-memory.md` and injected into the system prompt from a snapshot taken
-at the next session start. This is not a fourth pruning bucket: saving a note does not remove its source from the prompt.
+Selected notes are written to `<project>/.pi/jev-memory.md` as classifications complete and injected into the system
+prompt from a snapshot taken at the next session start. Agent end and session shutdown wait up to
+`JEV_MEMORY_CLASSIFY_WAIT_MS` for outstanding classifications. Requests still unfinished at shutdown are aborted and
+late responses discarded, so a slow request may not produce a note. This is not a fourth pruning bucket: saving a
+note does not remove its source from the prompt.
 
 ## Install
 
@@ -118,7 +122,7 @@ session totals. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every cal
 | `JEV_MEMORY_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
 | `JEV_MEMORY_DURABLE_ABOVE` | `0.7` | text notes require P(durable) above this; tool pointers require P(durable) above `max(this, 0.85)` |
 | `JEV_MEMORY_MIN_TOKENS` | `150` | smaller tool results are never touched |
-| `JEV_MEMORY_CLASSIFY_WAIT_MS` | `2500` | how long the context hook waits for in-flight jev calls |
+| `JEV_MEMORY_CLASSIFY_WAIT_MS` | `2500` | maximum wait for in-flight classification at context, agent end and shutdown |
 | `JEV_MEMORY_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
 | `JEV_MEMORY_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; classification, logging and memory notes remain active. Previously applied decisions are still replayed. |
 | `JEV_MEMORY_PRESEND` | `1` | `0` turns pre-send compression off |

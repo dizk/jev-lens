@@ -26,7 +26,7 @@ export interface Config {
 	durableAbove: number;
 	/** Tool results smaller than this (estimated tokens) are never touched. */
 	minTokens: number;
-	/** How long the context hook waits for in-flight classifications. */
+	/** Maximum wait for in-flight classifications at context, agent end and shutdown. */
 	classifyWaitMs: number;
 	/** Provider prompt-cache TTL; idle longer than this means the cache is cold. */
 	cacheTtlMs: number;

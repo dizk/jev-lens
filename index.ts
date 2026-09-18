@@ -57,6 +57,17 @@ export default function (pi: ExtensionAPI) {
 	let ledger = new Map<string, Decision>();
 	/** Classifications launched but not yet resolved, keyed by toolCallId. */
 	const inflight = new Map<string, Promise<void>>();
+	const textInflight = new Set<Promise<void>>();
+	let generation = 0;
+	let sessionAbort = new AbortController();
+	const workSignal = (signal?: AbortSignal) => signal ? AbortSignal.any([signal, sessionAbort.signal]) : sessionAbort.signal;
+	async function waitForWork(work: Promise<void>[]) {
+		if (!work.length) return;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			await Promise.race([Promise.allSettled(work), new Promise<void>((resolve) => { timer = setTimeout(resolve, Math.max(0, cfg.classifyWaitMs)); })]);
+		} finally { clearTimeout(timer); }
+	}
 	/** Tool results from the previous assistant turn, waiting for "what happened next". */
 	let buffer: PendingResult[] = [];
 	/** Tool call arguments by id, so results can be described. */
@@ -89,6 +100,12 @@ export default function (pi: ExtensionAPI) {
 	// ---- session lifecycle -------------------------------------------------------------
 
 	pi.on("session_start", async (_event, ctx) => {
+		generation++;
+		sessionAbort.abort();
+		sessionAbort = new AbortController();
+		textInflight.clear();
+		durableQueue = [];
+		lastAssistantText = "";
 		ledger = rebuildLedger(ctx.sessionManager.getEntries());
 		buffer = [];
 		inflight.clear();
@@ -131,7 +148,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		const epoch = generation;
+		await waitForWork([...inflight.values(), ...textInflight]);
+		if (epoch !== generation) return;
 		flushDurable();
+		if (inflight.size || textInflight.size) log({ event: "shutdown_timeout", pending: inflight.size + textInflight.size });
+		generation++;
+		sessionAbort.abort();
+		inflight.clear();
+		textInflight.clear();
+		durableQueue = [];
 	});
 
 	// ---- memory file → system prompt (snapshot taken at session start, stable within the session)
@@ -182,15 +208,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async () => {
+		const epoch = generation;
 		// No further assistant reaction is coming for the last results; classify with what we have.
 		const toClassify = buffer;
 		buffer = [];
 		for (const item of toClassify) launchClassification(item, "", [], undefined);
-		flushDurable();
+		await waitForWork([...inflight.values(), ...textInflight]);
+		if (epoch === generation) flushDurable();
 	});
 
 	function launchClassification(item: PendingResult, afterText: string, afterCalls: { name: string; arguments: unknown }[], ctx?: ExtensionContext) {
 		const m = item.message;
+		if (sessionAbort.signal.aborted || m.content.some((c) => c.type !== "text")) return;
+		const epoch = generation;
 		if (ledger.has(m.toolCallId) || inflight.has(m.toolCallId)) return;
 		const output = contentText(m.content);
 		const tokens = estimateTokensOfText(output);
@@ -209,8 +239,9 @@ export default function (pi: ExtensionAPI) {
 		const summary = describeToolCall(m.toolName, item.args, output.length, lines);
 		const started = Date.now();
 		const p = classifier
-			.classifyToolResult(state, ctx?.signal)
+			.classifyToolResult(state, workSignal(ctx?.signal))
 			.then((probs) => {
+				if (epoch !== generation) return;
 				const decision: Decision = {
 					id: m.toolCallId,
 					toolName: m.toolName,
@@ -226,24 +257,34 @@ export default function (pi: ExtensionAPI) {
 				persist(decision);
 				log({ event: "decision", id: decision.id, tool: m.toolName, bucket: decision.bucket, p: probs, tokens, ms: Date.now() - started, summary });
 				// Tool output is rarely a durable fact by itself; only keep a pointer, and only when jev is very sure.
-				if (probs.durable > Math.max(cfg.durableAbove, 0.85)) durableQueue.push({ source: "tool", text: `${summary}${m.isError ? " failed" : " succeeded"}`, p: probs.durable, at: Date.now() });
+				if (probs.durable > Math.max(cfg.durableAbove, 0.85)) {
+					durableQueue.push({ source: "tool", text: `${summary}${m.isError ? " failed" : " succeeded"}`, p: probs.durable, at: Date.now() });
+					flushDurable();
+				}
 			})
 			.catch((err) => {
-				log({ event: "classify_error", id: m.toolCallId, error: String(err?.message ?? err) });
+				if (epoch === generation) log({ event: "classify_error", id: m.toolCallId, error: String(err?.message ?? err) });
 			})
-			.finally(() => inflight.delete(m.toolCallId));
+			.finally(() => { if (epoch === generation) inflight.delete(m.toolCallId); });
 		inflight.set(m.toolCallId, p);
 	}
 
 	function queueText(role: "user" | "agent", text: string, ctx?: ExtensionContext) {
-		if (usingMock || text.length < 40 || text.length > 6000) return;
-		classifier
-			.classifyText({ task: { first_user_request: truncate(firstUser, 600) }, message: truncate(text, 3000), role }, ctx?.signal)
+		if (sessionAbort.signal.aborted || usingMock || text.length < 40 || text.length > 6000) return;
+		const epoch = generation;
+		const work = classifier
+			.classifyText({ task: { first_user_request: truncate(firstUser, 600) }, message: truncate(text, 3000), role }, workSignal(ctx?.signal))
 			.then((p) => {
+				if (epoch !== generation) return;
 				log({ event: "text", role, p, chars: text.length });
-				if (p > cfg.durableAbove) durableQueue.push({ source: role, text: truncate(text, 400), p, at: Date.now() });
+				if (p > cfg.durableAbove) {
+					durableQueue.push({ source: role, text: truncate(text, 400), p, at: Date.now() });
+					flushDurable();
+				}
 			})
-			.catch((err) => log({ event: "classify_error", role, error: String(err?.message ?? err) }));
+			.catch((err) => { if (epoch === generation) log({ event: "classify_error", role, error: String(err?.message ?? err) }); })
+			.finally(() => { if (epoch === generation) textInflight.delete(work); });
+		textInflight.add(work);
 	}
 
 	function flushDurable() {
@@ -262,6 +303,7 @@ export default function (pi: ExtensionAPI) {
 	// ---- the cache-aware cut: right before each LLM call --------------------------------
 
 	pi.on("context", async (event, ctx) => {
+		const epoch = generation;
 		callIndex++;
 		const now = Date.now();
 		const coldCache = lastCallAt > 0 && now - lastCallAt > cfg.cacheTtlMs;
@@ -270,8 +312,9 @@ export default function (pi: ExtensionAPI) {
 		// Give in-flight classifications a bounded chance to land, so decisions apply at the
 		// earliest call and freeze there instead of shifting the prefix one call later.
 		if (inflight.size > 0) {
-			await Promise.race([Promise.allSettled([...inflight.values()]), new Promise((r) => setTimeout(r, cfg.classifyWaitMs))]);
+			await waitForWork([...inflight.values()]);
 		}
+		if (epoch !== generation || sessionAbort.signal.aborted) return;
 
 		const pending = pendingPrunable(event.messages, ledger, cfg);
 		const { apply: applyPending, reason } = shouldApplyPending(cfg.mode, cfg, coldCache, pending);
@@ -324,7 +367,9 @@ export default function (pi: ExtensionAPI) {
 	// ---- pre-send compression: pick a view of a large tool result before it is ever sent ----
 
 	pi.on("tool_result", async (event, ctx) => {
-		if (!cfg.presend || !cfg.enabled) return;
+		if (!cfg.presend || !cfg.enabled || sessionAbort.signal.aborted) return;
+		const epoch = generation;
+		const signal = workSignal(ctx.signal);
 		if (event.toolName === "recall") return;
 		const text = contentText(event.content);
 		const tokens = estimateTokensOfText(text);
@@ -334,6 +379,7 @@ export default function (pi: ExtensionAPI) {
 		const started = Date.now();
 		const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
 		const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms, viewParams);
+		if (epoch !== generation || signal.aborted) return;
 		if (cands.views.length < 2) {
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
 			return;
@@ -341,11 +387,13 @@ export default function (pi: ExtensionAPI) {
 		const totalLines = text.split("\n").length;
 		const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistantText, toolName: event.toolName, args: event.input, isError: event.isError, cands, totalLines, totalChars: text.length });
 		try {
-			const answer = await presend.choose(state, cands.views.map((v) => v.kind), ctx.signal);
+			const answer = await presend.choose(state, cands.views.map((v) => v.kind), signal);
+			if (epoch !== generation || signal.aborted) return;
 			let view = decideView(answer, cands, cfg);
 			let expanded: number[] | undefined;
 			if (view.kind !== "full") {
-				const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, ctx.signal, cands.blocks);
+				const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, signal, cands.blocks);
+				if (epoch !== generation || signal.aborted) return;
 				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > cfg.presendExpandAbove ? i : -1)).filter((i) => i >= 0); }
 			}
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
@@ -358,7 +406,7 @@ export default function (pi: ExtensionAPI) {
 			status(ctx);
 			return { content: [{ type: "text", text: view.text + footer(view, event.toolCallId, totalLines) }], details };
 		} catch (err) {
-			log({ event: "presend_error", id: event.toolCallId, error: String((err as Error)?.message ?? err) });
+			if (epoch === generation) log({ event: "presend_error", id: event.toolCallId, error: String((err as Error)?.message ?? err) });
 			return;
 		}
 	});

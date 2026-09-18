@@ -2,6 +2,8 @@
  * Shared scoring of pre-send compression against a recorded session: for every large tool
  * result, build views, let the classifier choose, and compare with what the agent did next.
  */
+import { matchesGlob, posix } from "node:path";
+import { displayedFiles } from "../src/shell-display.ts";
 import type { Config } from "../src/config.ts";
 import { buildPresendState, decideView, expandRelevantBlocks, type PresendClassifier } from "../src/presend.ts";
 import type { AgentMessage } from "../src/pi-types.ts";
@@ -71,7 +73,12 @@ export async function scoreMessages(
 		if (view.kind !== "full") {
 			try { const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, undefined, cands.blocks); if (ex) view = ex.view; } catch {}
 		}
-		const path = (args as { path?: string })?.path;
+		const a = args as { path?: string; command?: string } | undefined;
+		const paths = a?.path ? [a.path] : m.toolName === "bash" && a?.command ? displayedFiles(a.command) ?? [] : [];
+		const normalize = (p: string) => posix.normalize(p.replace(/^@/, ""));
+		const matchesPath = (p: unknown) => typeof p === "string" && paths.some((path) =>
+			normalize(p) === normalize(path) || (m.toolName === "bash" && matchesGlob(normalize(p), normalize(path))));
+		const rereadPaths = new Set<string>();
 		let editMiss = false, quoteMiss = false, editsChecked = 0, refMiss = false;
 		const omitted = omittedText(text, view);
 		// ref-miss: the agent's next two steps use an identifier that exists only in the omitted part
@@ -93,12 +100,17 @@ export async function scoreMessages(
 				for (const id of used) if (omittedIds.has(id) && !known.has(id)) { refMiss = true; refMissId = id; break; }
 			}
 			for (const c of n.content) {
-				if (c.type === "toolCall" && c.name === "read" && path && (c.arguments as { path?: string })?.path === path) reread = true;
-				if (c.type === "toolCall" && c.name === "recall") reread = true;
+				if (c.type === "toolCall" && c.name === "read") {
+					const readPath = (c.arguments as { path?: string })?.path;
+					if (readPath && matchesPath(readPath)) rereadPaths.add(normalize(readPath));
+				}
+				if (c.type === "toolCall" && c.name === "recall" && (c.arguments as { id?: string })?.id === m.toolCallId) reread = true;
 			}
 			for (const c of n.content) {
-				if (c.type !== "toolCall" || c.name !== "edit" || (c.arguments as { path?: string })?.path !== path) continue;
-				for (const e of ((c.arguments as { edits?: { oldText: string }[] }).edits ?? [])) {
+				if (c.type !== "toolCall" || c.name !== "edit" || reread) continue;
+				const editArgs = c.arguments as { path?: string; oldText?: string; edits?: { oldText: string }[] };
+				if (!matchesPath(editArgs.path) || rereadPaths.has(normalize(editArgs.path!))) continue;
+				for (const e of (editArgs.edits ?? (editArgs.oldText ? [{ oldText: editArgs.oldText }] : []))) {
 					const first = (e.oldText ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
 					if (!first) continue;
 					editsChecked++;

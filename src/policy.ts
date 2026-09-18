@@ -23,6 +23,8 @@ export function trimText(text: string, headLines: number, tailLines: number): st
 /** Deterministic transform of a tool result given a frozen decision. */
 export function transformToolResult(message: AgentMessage, decision: Decision, cfg: Config): AgentMessage {
 	if (message.role !== "toolResult" || decision.bucket === "keep") return message;
+	// Classifiers only see text; never apply even a restored decision to unseen image content.
+	if (message.content.some((c) => c.type !== "text")) return message;
 	const original = contentText(message.content);
 	const text = decision.bucket === "forget" ? stubText(decision.summary) : trimText(original, cfg.trimHeadLines, cfg.trimTailLines);
 	return { ...message, content: [{ type: "text", text }] };
