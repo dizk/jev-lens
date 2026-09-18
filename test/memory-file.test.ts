@@ -7,7 +7,7 @@ import { appendNotes, memoryPromptSection, readMemoryFile } from "../src/memory-
 describe("memory file", () => {
 	it("appends, dedups and renders a prompt section", () => {
 		const dir = mkdtempSync(join(tmpdir(), "jevmem-"));
-		const p = join(dir, "x", "jev-memory.md");
+		const p = join(dir, "x", "jev-context.md");
 		expect(appendNotes(p, [{ source: "user", text: "Always use pnpm here", p: 0.9, at: 0 }])).toBe(1);
 		expect(appendNotes(p, [{ source: "user", text: "always   use pnpm here", p: 0.9, at: 0 }])).toBe(0);
 		expect(appendNotes(p, [{ source: "agent", text: "Tests run with `npm test`", p: 0.8, at: 0 }])).toBe(1);

@@ -35,7 +35,7 @@ export function appendNotes(path: string, notes: DurableNote[]): number {
 	if (added === 0) return 0;
 	let kept = lines.slice(-MEMORY_MAX_LINES);
 	while (kept.join("\n").length > MEMORY_MAX_CHARS && kept.length > 1) kept = kept.slice(1);
-	const header = "# jev-memory\n\nDurable notes selected by jev from earlier sessions. Newest last.\n\n";
+	const header = "# jev-context\n\nDurable notes selected by jev from earlier sessions. Newest last.\n\n";
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${header}${kept.join("\n")}\n`, "utf8");
 	return added;
@@ -47,5 +47,5 @@ export function memoryPromptSection(snapshot: string): string {
 		.filter((l) => l.startsWith("- "))
 		.join("\n");
 	if (!body) return "";
-	return `\n\n# Memory from earlier sessions (jev-memory)\nThese notes were kept from previous sessions in this project. Treat them as likely but verify before relying on details.\n${body}\n`;
+	return `\n\n# Memory from earlier sessions (jev-context)\nThese notes were kept from previous sessions in this project. Treat them as likely but verify before relying on details.\n${body}\n`;
 }

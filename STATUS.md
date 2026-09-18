@@ -7,17 +7,17 @@ Written overnight 2026-09-18. Everything below was verified by running it; numbe
 - **Extension loads and runs in pi 0.84.3** with `pi -e ./index.ts`, in TUI, `-p` and `--mode json`. Verified headless with `openai-codex/gpt-5.6-luna`.
 - **jev classification** via `@typesafe-ai/sdk` 0.6.0, model `jev-1.13.0`: one request per tool result, three Noul questions (needed / outcome only / durable), 400 to 800 ms, about 400 input tokens each. Runs asynchronously right after the assistant's next message, so it is off the critical path; the `context` hook only waits (bounded, 2.5 s) for stragglers.
 - **Decisions are made once and frozen**: persisted with `pi.appendEntry`, rebuilt on `session_start`, so `/resume`, `/fork` and `/reload` reproduce the same prompt. Unit tests cover the freeze, the never-remove-a-tool-result invariant, and ledger rebuild.
-- **Three seal modes** (`JEV_MEMORY_MODE`): `rolling`, `batch`, `budget` (default). See "What I learned" for why budget is the default.
-- **Memory file**: durable user/agent statements (and, rarely, tool pointers) go to `<project>/.pi/jev-memory.md`, deduplicated and capped; a snapshot is appended to the system prompt at session start only, so it never disturbs the cache mid-session.
+- **Three seal modes** (`JEV_CONTEXT_MODE`): `rolling`, `batch`, `budget` (default). See "What I learned" for why budget is the default.
+- **Memory file**: durable user/agent statements (and, rarely, tool pointers) go to `<project>/.pi/jev-context.md`, deduplicated and capped; a snapshot is appended to the system prompt at session start only, so it never disturbs the cache mid-session.
 - **Eval harness**: `eval/replay.ts` (offline, no coding-model calls), `eval/generate.ts` (pi headless on a fixture repo with hidden tests), `eval/report.ts` (comparison table). Fixture: 9 tasks, one of them a five-part "compound" task that produces 18 to 20 LLM calls.
-- `/jev-memory`, `/jev-memory decisions`, `/jev-memory file` commands; footer status; JSON-lines log in `<project>/.pi/jev-memory.log`.
+- `/jev-context`, `/jev-context decisions`, `/jev-context file` commands; footer status; JSON-lines log in `<project>/.pi/jev-context.log`.
 
 ## What I learned (this changes the design)
 
 1. **With a 10× cache discount, pruning old context is almost never a token-cost win on its own.** Keeping a 5k-token tool result cached costs about 500 token-equivalents per call. Pruning it rewrites the whole tail after it once at full price. Break-even is roughly `9 × tail / pruned` calls. In the offline replay of four baseline sessions (55 calls, 81 tool results), rolling mode saved 7.6 % of input tokens but only 1.7 % of simulated cost, because every prune broke the prefix. The live runs agree: rolling mode lowered the measured cache-hit rate on several short tasks.
    The real payoff of pruning is **context budget**: smaller prompts, later compaction, less distraction. So the policy should spend cache rewrites deliberately, which is what `budget` mode does: hold decisions, apply them all at once when they remove at least half of the tail they would rewrite (or when the cache is cold anyway, or at compaction).
 2. **jev's decisions look right most of the time.** Across the runs it forgot repeated `npm test` outputs, `CHANGELOG.md`, an exploratory `ls`/`find`, and a `read` of an unrelated module; it kept source files the agent was editing and the design doc while writing ARCHITECTURE.md. Probabilities are well spread (needed from 0.11 to 0.70), which makes thresholds meaningful.
-3. **The failure mode to watch is "forgot the thing the agent will need in two turns."** One rolling-mode run (money-rounding) forgot `tests/parse.test.js` (P(needed)=0.16) right after the agent had read it and moved on to write a different test file; the next `npm test` failed on exactly those tests and the agent declared itself done without fixing them. Baseline fixed them. One sample, but it is the shape of the risk: the "what did the agent do next" evidence is only one turn deep. Mitigations available now: lower `JEV_MEMORY_FORGET_BELOW` (0.25 → 0.15), or `budget` mode, which delays application so the agent usually has finished with the item before it disappears.
+3. **The failure mode to watch is "forgot the thing the agent will need in two turns."** One rolling-mode run (money-rounding) forgot `tests/parse.test.js` (P(needed)=0.16) right after the agent had read it and moved on to write a different test file; the next `npm test` failed on exactly those tests and the agent declared itself done without fixing them. Baseline fixed them. One sample, but it is the shape of the risk: the "what did the agent do next" evidence is only one turn deep. Mitigations available now: lower `JEV_CONTEXT_FORGET_BELOW` (0.25 → 0.15), or `budget` mode, which delays application so the agent usually has finished with the item before it disappears.
 4. **Short sessions cannot show a benefit.** Eight tasks × 5 to 16 calls × 2 to 20k tokens of context: nothing to prune. Only the compound task (18 to 20 calls) gets into the regime where it matters, and even that is short compared to a real afternoon in pi. The replay harness on real long sessions is the right instrument; there are only four tiny local sessions on this machine right now.
 
 ## What does not work or was not done
@@ -187,7 +187,7 @@ and stay fixed within a loop.
 
 ### Live check of the round-3 variant on gpt-5.6-luna
 
-`jev-presend-r3` = pre-send with `research/round3/best.json` loaded through `JEV_MEMORY_VARIANT`, compound and marathon × 3:
+`jev-presend-r3` = pre-send with `research/round3/best.json` loaded through `JEV_CONTEXT_VARIANT`, compound and marathon × 3:
 
 | task | condition | passed | uncached / run | cached / run | hit | final prompt | cost units / run | compressed | recalls |
 |---|---|---|---|---|---|---|---|---|---|
@@ -262,7 +262,7 @@ edits as the real test.
 The single edit-miss at 0.5 was an added `import`: the header block was not expanded. Keeping short import headers whole
 closed it at no cost. The "is this block what the task is about" phrasing for expansion failed 2 of 6 edits on train,
 so the "will it need the body" phrasing stays. Nested signatures in the outline cut code ref-miss from 6.3 % to 4.7 %.
-New default: `JEV_MEMORY_PRESEND_CODE_POLICY=outline`, expansion threshold 0.5.
+New default: `JEV_CONTEXT_PRESEND_CODE_POLICY=outline`, expansion threshold 0.5.
 
 Live on gpt-5.6-luna (marathon × 3): 3/3 passed, 0 recalls, cost 60.3k units per run against 56.1k for the round-4
 default and 72.9k for baseline. Neutral within run-to-run noise: the fixture's source files are small (10 of 13 large
@@ -386,6 +386,6 @@ The excluded edit results also shrink the editable count from 46 to 26, which is
 ## What to try next
 
 1. **Pre-send judgment**: built, see above. Next: let the autoresearch researcher write view builders (one per content kind, sandboxed, verified as strict line subsets) instead of only prompt text and thresholds; three rounds of the latter transferred nothing, every code-built view did. And a structural rule for the second step: expand blocks referenced by an expanded block or named in the task.
-2. **Two-turn evidence** before a forget: only forget once the agent has produced two later assistant messages without touching the item, or lower `JEV_MEMORY_FORGET_BELOW` to 0.15.
+2. **Two-turn evidence** before a forget: only forget once the agent has produced two later assistant messages without touching the item, or lower `JEV_CONTEXT_FORGET_BELOW` to 0.15.
 3. **Run the replay harness on real, long pi sessions** from `~/.pi/agent/sessions` as they accumulate (the Astra sessions are the first); and score code-touching variants on the 300-799 slice, not the 100-trajectory holdout.
-4. Tune `JEV_MEMORY_BUDGET_FRACTION` (0.5 assumes about 18 more calls will follow; 0.25 assumes 36) or trigger on context percentage instead, so budget mode actually fires in hour-long sessions before compaction does.
+4. Tune `JEV_CONTEXT_BUDGET_FRACTION` (0.5 assumes about 18 more calls will follow; 0.25 assumes 36) or trigger on context percentage instead, so budget mode actually fires in hour-long sessions before compaction does.

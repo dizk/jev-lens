@@ -1,5 +1,5 @@
 {
-  "name": "pi-jev-memory",
+  "name": "pi-jev-context",
   "version": "0.1.0",
   "description": "pi extension: jev-classified, cache-aware memory routing (context / file / forget)",
   "type": "module",

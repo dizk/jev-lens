@@ -1,6 +1,6 @@
 import type { Decision } from "./types.ts";
 
-export const ENTRY_TYPE = "jev-memory";
+export const ENTRY_TYPE = "jev-context";
 
 export interface LedgerEntryData {
 	kind: "decision";

@@ -1,4 +1,4 @@
-# pi-jev-memory
+# pi-jev-context
 
 A [pi](https://github.com/earendil-works/pi-mono) extension that **compresses large tool results before they reach the
 model**, using [jev](https://docs.typesafe.ai) (TypeSafe's System One model) to select useful views and code blocks.
@@ -52,7 +52,7 @@ original character count, full text is sent instead.
 When a result is compressed, its full output is kept in `details` (persisted in the session, not included in the model
 prompt) and served by a `recall` tool using an id, a line range or a pattern. This storage covers pre-send compression,
 not results that were only pruned post-send; those must be obtained by re-running the original tool. Every recall is
-logged as feedback on the reduced view. Set `JEV_MEMORY_PRESEND=0` to turn pre-send compression off.
+logged as feedback on the reduced view. Set `JEV_CONTEXT_PRESEND=0` to turn pre-send compression off.
 
 ## Post-send pruning (the context-budget layer)
 
@@ -68,7 +68,7 @@ This is a secondary pass, not the source of the initial pre-send savings. It cla
 Prompt caches match on an exact prefix. Any edit to an already-sent message invalidates the cache from that point on.
 The extension limits repeated rewrites using persisted decisions:
 
-1. **Classify after reaction.** Text-only tool results of at least `JEV_MEMORY_MIN_TOKENS` are queued for classification after
+1. **Classify after reaction.** Text-only tool results of at least `JEV_CONTEXT_MIN_TOKENS` are queued for classification after
    the next assistant message supplies evidence of what happened next. Results still buffered at agent end are
    classified without that reaction. Results with an existing decision or an in-flight classification are skipped.
 2. **Apply, then freeze the decision.** The `context` hook waits briefly for in-flight classifications and applies
@@ -88,66 +88,66 @@ Tool results are never removed, only rewritten, because every `function_call` mu
 ## Durable notes (cross-session memory)
 
 Separately from compression and pruning, jev assesses whether content is worth remembering across sessions.
-Selected notes are written to `<project>/.pi/jev-memory.md` as classifications complete and injected into the system
+Selected notes are written to `<project>/.pi/jev-context.md` as classifications complete and injected into the system
 prompt from a snapshot taken at the next session start. Agent end and session shutdown wait up to
-`JEV_MEMORY_CLASSIFY_WAIT_MS` for outstanding classifications. Requests still unfinished at shutdown are aborted and
+`JEV_CONTEXT_CLASSIFY_WAIT_MS` for outstanding classifications. Requests still unfinished at shutdown are aborted and
 late responses discarded, so a slow request may not produce a note. This is not a fourth pruning bucket: saving a
 note does not remove its source from the prompt.
 
 ## Install
 
 ```sh
-git clone https://github.com/dizk/pi-jev-memory.git ~/repos/pi-jev-memory
-cd ~/repos/pi-jev-memory && npm install
+git clone https://github.com/dizk/pi-jev-context.git ~/repos/pi-jev-context
+cd ~/repos/pi-jev-context && npm install
 echo 'TYPESAFE_API_KEY=...' > .env
-pi -e ~/repos/pi-jev-memory/index.ts
+pi -e ~/repos/pi-jev-context/index.ts
 ```
 
 Without a key the extension runs with a mock classifier and warns at startup.
 
-Inside pi: `/jev-memory` shows stats, `/jev-memory list` lists the latest 200 pre-send-compressed tool results with tokens
-before and after, `/jev-memory diff [n]` opens an overlay for the n-th latest one showing the original output with the
+Inside pi: `/jev-context` shows stats, `/jev-context list` lists the latest 200 pre-send-compressed tool results with tokens
+before and after, `/jev-context diff [n]` opens an overlay for the n-th latest one showing the original output with the
 lines the model did not get marked `−` (press `t` to switch to exactly what was sent, `Esc` to close),
-`/jev-memory decisions` lists post-send decisions with probabilities, `/jev-memory file` prints the memory file.
+`/jev-context decisions` lists post-send decisions with probabilities, `/jev-context file` prints the memory file.
 In the transcript, a compressed `read`/`bash`/`grep`/`find`/`ls` result shows a header line
-`⌁ jev-memory outline · 179 of 1524 tokens (−88 %)` and, expanded (ctrl+e), the text the model saw. The footer shows
+`⌁ jev-context outline · 179 of 1524 tokens (−88 %)` and, expanded (ctrl+e), the text the model saw. The footer shows
 session totals, leading with the share of the session's input tokens jev kept out of the prompt:
-`jev-memory −38% of input (presend −12.3k · 5/8 · 1 recalls, pruned −4.0k · 3, 2 notes)`. The share is
+`jev-context −38% of input (presend −12.3k · 5/8 · 1 recalls, pruned −4.0k · 3, 2 notes)`. The share is
 cut / (sent + cut), where sent is the provider's own input plus cache-read counts over all calls and cut is what every
-compressed or pruned result saved on every call it was part of, so a result compressed early counts on each later call. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every call is logged to
-`<project>/.pi/jev-memory.log` (JSON lines).
+compressed or pruned result saved on every call it was part of, so a result compressed early counts on each later call. Set `JEV_CONTEXT_UI=0` to keep pi's own tool rendering. Every call is logged to
+`<project>/.pi/jev-context.log` (JSON lines).
 
 ### Configuration (environment)
 
 | variable | default | meaning |
 |---|---|---|
-| `JEV_MEMORY_MODE` | `budget` | `rolling`, `batch` or `budget` (see above) |
-| `JEV_MEMORY_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` | `0.5` / `1000` | budget mode: apply when pending prunes remove at least this share of the tail they rewrite, and at least this many tokens |
-| `JEV_MEMORY_FORGET_BELOW` | `0.25` | P(needed) below this → forget |
-| `JEV_MEMORY_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
-| `JEV_MEMORY_DURABLE_ABOVE` | `0.7` | text notes require P(durable) above this; tool pointers require P(durable) above `max(this, 0.85)` |
-| `JEV_MEMORY_MIN_TOKENS` | `150` | smaller tool results are never touched |
-| `JEV_MEMORY_CLASSIFY_WAIT_MS` | `2500` | maximum wait for in-flight classification at context, agent end and shutdown |
-| `JEV_MEMORY_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
-| `JEV_MEMORY_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; classification, logging and memory notes remain active. Previously applied decisions are still replayed. |
-| `JEV_MEMORY_PRESEND` | `1` | `0` turns pre-send compression off |
-| `JEV_MEMORY_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
-| `JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
-| `JEV_MEMORY_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
-| `JEV_MEMORY_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output; the question is phrased for edits, and test runs rarely need exact full text (+3.3 points on the benchmark, no extra misses) |
-| `JEV_MEMORY_PRESEND_COMMAND_POLICY` | `sections` | when jev picks full for command output but needs-full is under the command threshold, send the section headers and let the second step expand the needed sections (full again if that reaches 90 %). `gate`: jev's view choice stands. |
-| `JEV_MEMORY_PRESEND_SECTION_EXPAND_ABOVE` | `0.5` | expand a section of command output when P(needed) exceeds this |
-| `JEV_MEMORY_PRESEND_SECTION_FLOOR` | `0.3` | send full when no section of command output reaches this probability (the expansion step could not tell, typical for docs read for orientation); `0` allows headers alone |
-| `JEV_MEMORY_PRESEND_CODE_POLICY` | `gate` | jev's needs-full and full-mass gates decide between full and a view; when a view is chosen, selected block bodies are expanded. `outline`: always send an outline plus expanded bodies (saves more, but 17 % of later edits missed their block on 500 real trajectories). |
-| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold |
-| `JEV_MEMORY_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 disables the check); bypassed by outline-first code selection |
-| `JEV_MEMORY_TRIM_HEAD` / `_TRIM_TAIL` | `15` / `15` | lines retained at each end for post-send trimming |
-| `JEV_MEMORY_STATE_HEAD` / `_STATE_TAIL` | `2500` / `800` | maximum output characters in post-send classifier excerpts |
-| `JEV_MEMORY_MODEL` | `jev-latest` | classifier model |
-| `JEV_MEMORY_CLASSIFIER` | unset | `mock` forces deterministic classifiers without API calls |
-| `JEV_MEMORY_LOG` | `1` | `0` disables JSON-lines logging |
-| `JEV_MEMORY_UI` | `1` | `0` disables custom built-in tool rendering |
-| `JEV_MEMORY_VARIANT` | unset | JSON file with `config`, `prompts` and `views` overrides (also accepts autoresearch's `{ variant }` wrapper); config overrides take precedence over environment settings |
+| `JEV_CONTEXT_MODE` | `budget` | `rolling`, `batch` or `budget` (see above) |
+| `JEV_CONTEXT_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` | `0.5` / `1000` | budget mode: apply when pending prunes remove at least this share of the tail they rewrite, and at least this many tokens |
+| `JEV_CONTEXT_FORGET_BELOW` | `0.25` | P(needed) below this → forget |
+| `JEV_CONTEXT_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
+| `JEV_CONTEXT_DURABLE_ABOVE` | `0.7` | text notes require P(durable) above this; tool pointers require P(durable) above `max(this, 0.85)` |
+| `JEV_CONTEXT_MIN_TOKENS` | `150` | smaller tool results are never touched |
+| `JEV_CONTEXT_CLASSIFY_WAIT_MS` | `2500` | maximum wait for in-flight classification at context, agent end and shutdown |
+| `JEV_CONTEXT_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
+| `JEV_CONTEXT_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; classification, logging and memory notes remain active. Previously applied decisions are still replayed. |
+| `JEV_CONTEXT_PRESEND` | `1` | `0` turns pre-send compression off |
+| `JEV_CONTEXT_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
+| `JEV_CONTEXT_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
+| `JEV_CONTEXT_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
+| `JEV_CONTEXT_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output; the question is phrased for edits, and test runs rarely need exact full text (+3.3 points on the benchmark, no extra misses) |
+| `JEV_CONTEXT_PRESEND_COMMAND_POLICY` | `sections` | when jev picks full for command output but needs-full is under the command threshold, send the section headers and let the second step expand the needed sections (full again if that reaches 90 %). `gate`: jev's view choice stands. |
+| `JEV_CONTEXT_PRESEND_SECTION_EXPAND_ABOVE` | `0.5` | expand a section of command output when P(needed) exceeds this |
+| `JEV_CONTEXT_PRESEND_SECTION_FLOOR` | `0.3` | send full when no section of command output reaches this probability (the expansion step could not tell, typical for docs read for orientation); `0` allows headers alone |
+| `JEV_CONTEXT_PRESEND_CODE_POLICY` | `gate` | jev's needs-full and full-mass gates decide between full and a view; when a view is chosen, selected block bodies are expanded. `outline`: always send an outline plus expanded bodies (saves more, but 17 % of later edits missed their block on 500 real trajectories). |
+| `JEV_CONTEXT_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold |
+| `JEV_CONTEXT_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 disables the check); bypassed by outline-first code selection |
+| `JEV_CONTEXT_TRIM_HEAD` / `_TRIM_TAIL` | `15` / `15` | lines retained at each end for post-send trimming |
+| `JEV_CONTEXT_STATE_HEAD` / `_STATE_TAIL` | `2500` / `800` | maximum output characters in post-send classifier excerpts |
+| `JEV_CONTEXT_MODEL` | `jev-latest` | classifier model |
+| `JEV_CONTEXT_CLASSIFIER` | unset | `mock` forces deterministic classifiers without API calls |
+| `JEV_CONTEXT_LOG` | `1` | `0` disables JSON-lines logging |
+| `JEV_CONTEXT_UI` | `1` | `0` disables custom built-in tool rendering |
+| `JEV_CONTEXT_VARIANT` | unset | JSON file with `config`, `prompts` and `views` overrides (also accepts autoresearch's `{ variant }` wrapper); config overrides take precedence over environment settings |
 
 `TYPESAFE_API_KEY` enables the real classifier. The extension loads `.env` from its own directory (and `src/`), not
 from the target project; existing nonempty environment values take precedence.

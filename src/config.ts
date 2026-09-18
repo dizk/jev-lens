@@ -61,7 +61,7 @@ export interface Config {
 	/** Command output: when no section reaches this probability the step is uninformative and full is sent (0 = headers alone are allowed). */
 	presendSectionFloor: number;
 	model: string;
-	/** Optional variant file (JEV_MEMORY_VARIANT): { config, prompts, views } overrides, as produced by eval/bench/autoresearch.ts. */
+	/** Optional variant file (JEV_CONTEXT_VARIANT): { config, prompts, views } overrides, as produced by eval/bench/autoresearch.ts. */
 	variantFile: string | undefined;
 	/** Force the mock classifier even when a key is present (tests, dry runs). */
 	forceMock: boolean;
@@ -93,40 +93,40 @@ function num(name: string, fallback: number): number {
 
 export function loadConfig(): Config {
 	loadDotEnv();
-	const envMode = process.env.JEV_MEMORY_MODE;
+	const envMode = process.env.JEV_CONTEXT_MODE;
 	const mode: SealMode = envMode === "batch" || envMode === "budget" || envMode === "rolling" ? envMode : "budget";
 	return {
-		enabled: process.env.JEV_MEMORY_DISABLED !== "1",
+		enabled: process.env.JEV_CONTEXT_DISABLED !== "1",
 		mode,
-		budgetFraction: num("JEV_MEMORY_BUDGET_FRACTION", 0.5),
-		budgetMinTokens: num("JEV_MEMORY_BUDGET_MIN_TOKENS", 1000),
-		forgetBelow: num("JEV_MEMORY_FORGET_BELOW", 0.25),
-		trimBelow: num("JEV_MEMORY_TRIM_BELOW", 0.5),
-		trimAbove: num("JEV_MEMORY_TRIM_ABOVE", 0.6),
-		durableAbove: num("JEV_MEMORY_DURABLE_ABOVE", 0.7),
-		minTokens: num("JEV_MEMORY_MIN_TOKENS", 150),
-		classifyWaitMs: num("JEV_MEMORY_CLASSIFY_WAIT_MS", 2500),
-		cacheTtlMs: num("JEV_MEMORY_CACHE_TTL_MS", 5 * 60 * 1000),
-		trimHeadLines: num("JEV_MEMORY_TRIM_HEAD", 15),
-		trimTailLines: num("JEV_MEMORY_TRIM_TAIL", 15),
-		stateHeadChars: num("JEV_MEMORY_STATE_HEAD", 2500),
-		stateTailChars: num("JEV_MEMORY_STATE_TAIL", 800),
-		presend: process.env.JEV_MEMORY_PRESEND !== "0",
-		presendMinTokens: num("JEV_MEMORY_PRESEND_MIN_TOKENS", 1200),
-		presendNeedsFullAbove: num("JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE", 0.5),
-		presendFullMassAbove: num("JEV_MEMORY_PRESEND_FULL_MASS_ABOVE", 0.5),
-		presendCodeNeedsFullAbove: num("JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE", 0.5),
-		presendCommandNeedsFullAbove: num("JEV_MEMORY_PRESEND_COMMAND_NEEDS_FULL_ABOVE", 0.65),
-		presendCodePolicy: process.env.JEV_MEMORY_PRESEND_CODE_POLICY === "outline" ? "outline" : "gate",
-		presendMinConfidence: num("JEV_MEMORY_PRESEND_MIN_CONFIDENCE", 0),
-		presendExpandAbove: num("JEV_MEMORY_PRESEND_EXPAND_ABOVE", 0.5),
-		presendCommandPolicy: process.env.JEV_MEMORY_PRESEND_COMMAND_POLICY === "gate" ? "gate" : "sections",
-		presendSectionExpandAbove: num("JEV_MEMORY_PRESEND_SECTION_EXPAND_ABOVE", 0.5),
-		presendSectionFloor: num("JEV_MEMORY_PRESEND_SECTION_FLOOR", 0.3),
-		model: process.env.JEV_MEMORY_MODEL || "jev-latest",
-		variantFile: process.env.JEV_MEMORY_VARIANT || undefined,
-		forceMock: process.env.JEV_MEMORY_CLASSIFIER === "mock",
-		logFile: process.env.JEV_MEMORY_LOG !== "0",
+		budgetFraction: num("JEV_CONTEXT_BUDGET_FRACTION", 0.5),
+		budgetMinTokens: num("JEV_CONTEXT_BUDGET_MIN_TOKENS", 1000),
+		forgetBelow: num("JEV_CONTEXT_FORGET_BELOW", 0.25),
+		trimBelow: num("JEV_CONTEXT_TRIM_BELOW", 0.5),
+		trimAbove: num("JEV_CONTEXT_TRIM_ABOVE", 0.6),
+		durableAbove: num("JEV_CONTEXT_DURABLE_ABOVE", 0.7),
+		minTokens: num("JEV_CONTEXT_MIN_TOKENS", 150),
+		classifyWaitMs: num("JEV_CONTEXT_CLASSIFY_WAIT_MS", 2500),
+		cacheTtlMs: num("JEV_CONTEXT_CACHE_TTL_MS", 5 * 60 * 1000),
+		trimHeadLines: num("JEV_CONTEXT_TRIM_HEAD", 15),
+		trimTailLines: num("JEV_CONTEXT_TRIM_TAIL", 15),
+		stateHeadChars: num("JEV_CONTEXT_STATE_HEAD", 2500),
+		stateTailChars: num("JEV_CONTEXT_STATE_TAIL", 800),
+		presend: process.env.JEV_CONTEXT_PRESEND !== "0",
+		presendMinTokens: num("JEV_CONTEXT_PRESEND_MIN_TOKENS", 1200),
+		presendNeedsFullAbove: num("JEV_CONTEXT_PRESEND_NEEDS_FULL_ABOVE", 0.5),
+		presendFullMassAbove: num("JEV_CONTEXT_PRESEND_FULL_MASS_ABOVE", 0.5),
+		presendCodeNeedsFullAbove: num("JEV_CONTEXT_PRESEND_CODE_NEEDS_FULL_ABOVE", 0.5),
+		presendCommandNeedsFullAbove: num("JEV_CONTEXT_PRESEND_COMMAND_NEEDS_FULL_ABOVE", 0.65),
+		presendCodePolicy: process.env.JEV_CONTEXT_PRESEND_CODE_POLICY === "outline" ? "outline" : "gate",
+		presendMinConfidence: num("JEV_CONTEXT_PRESEND_MIN_CONFIDENCE", 0),
+		presendExpandAbove: num("JEV_CONTEXT_PRESEND_EXPAND_ABOVE", 0.5),
+		presendCommandPolicy: process.env.JEV_CONTEXT_PRESEND_COMMAND_POLICY === "gate" ? "gate" : "sections",
+		presendSectionExpandAbove: num("JEV_CONTEXT_PRESEND_SECTION_EXPAND_ABOVE", 0.5),
+		presendSectionFloor: num("JEV_CONTEXT_PRESEND_SECTION_FLOOR", 0.3),
+		model: process.env.JEV_CONTEXT_MODEL || "jev-latest",
+		variantFile: process.env.JEV_CONTEXT_VARIANT || undefined,
+		forceMock: process.env.JEV_CONTEXT_CLASSIFIER === "mock",
+		logFile: process.env.JEV_CONTEXT_LOG !== "0",
 		apiKey: process.env.TYPESAFE_API_KEY,
 	};
 }

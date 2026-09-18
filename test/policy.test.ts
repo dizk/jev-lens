@@ -86,9 +86,9 @@ describe("applyLedger", () => {
 describe("rebuildLedger", () => {
 	it("later entries win and applied never regresses to pending", () => {
 		const entries = [
-			{ type: "custom", customType: "jev-memory", data: { kind: "decision", decision: decision("a", "forget", "pending") } },
-			{ type: "custom", customType: "jev-memory", data: { kind: "decision", decision: decision("a", "forget", "applied") } },
-			{ type: "custom", customType: "jev-memory", data: { kind: "decision", decision: decision("a", "forget", "pending") } },
+			{ type: "custom", customType: "jev-context", data: { kind: "decision", decision: decision("a", "forget", "pending") } },
+			{ type: "custom", customType: "jev-context", data: { kind: "decision", decision: decision("a", "forget", "applied") } },
+			{ type: "custom", customType: "jev-context", data: { kind: "decision", decision: decision("a", "forget", "pending") } },
 			{ type: "custom", customType: "other", data: { kind: "decision", decision: decision("z", "forget") } },
 			{ type: "message", message: { role: "user" } },
 		];

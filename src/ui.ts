@@ -3,7 +3,7 @@
  *
  * - Built-in tools (read, bash, grep, find, ls) are re-registered with renderers that show, for
  *   a compressed result, a one-line savings header and (expanded) the exact text the model saw.
- * - `/jev-memory diff [n]` opens an overlay with the original output, omitted lines marked, and
+ * - `/jev-context diff [n]` opens an overlay with the original output, omitted lines marked, and
  *   `t` toggles to the sent view.
  */
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
@@ -36,11 +36,11 @@ export interface ThemeLike {
 export function savingsLine(r: CompressedRecord, theme: ThemeLike): string {
 	const pct = r.tokensBefore ? Math.round((100 * (r.tokensBefore - r.tokensAfter)) / r.tokensBefore) : 0;
 	return (
-		theme.fg("accent", "⌁ jev-memory ") +
+		theme.fg("accent", "⌁ jev-context ") +
 		theme.fg("toolTitle", theme.bold(r.view)) +
 		theme.fg("muted", ` · ${r.tokensAfter} of ${r.tokensBefore} tokens (−${pct} %)`) +
 		(r.recalls ? theme.fg("warning", ` · recalled ${r.recalls}×`) : "") +
-		theme.fg("dim", " · /jev-memory diff")
+		theme.fg("dim", " · /jev-context diff")
 	);
 }
 
@@ -91,7 +91,7 @@ export class DiffOverlay {
 		const pct = r.tokensBefore ? Math.round((100 * (r.tokensBefore - r.tokensAfter)) / r.tokensBefore) : 0;
 		const omitted = r.full.split("\n").length - r.included.length;
 		return [
-			truncateToWidth(this.theme.fg("accent", this.theme.bold(`jev-memory · ${r.toolName} ${describeArgs(r.toolName, r.args)}`)), width),
+			truncateToWidth(this.theme.fg("accent", this.theme.bold(`jev-context · ${r.toolName} ${describeArgs(r.toolName, r.args)}`)), width),
 			truncateToWidth(this.theme.fg("muted", `${r.kind} → ${r.view} · ${r.tokensAfter} of ${r.tokensBefore} tokens (−${pct} %) · ${omitted} of ${r.full.split("\n").length} lines omitted` + (r.needsFull !== undefined ? ` · P(needs full)=${r.needsFull.toFixed(2)} P(full)=${(r.pFull ?? 0).toFixed(2)}` : "") + (r.recalls ? ` · recalled ${r.recalls}×` : "")), width),
 			truncateToWidth(this.theme.fg("dim", this.mode === "annotated" ? "original output; − marks lines the model did not get · t: show what was sent · ↑↓ PgUp PgDn · Esc" : "exactly what the model got · t: show original with omissions · ↑↓ PgUp PgDn · Esc"), width),
 			"",
