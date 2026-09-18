@@ -188,3 +188,31 @@ describe("TUI integration", () => {
 		expect(notes[1]).toMatch(/outline|relevant/);
 	});
 });
+
+describe("status line", () => {
+	it("leads with the share of the session's input tokens kept out of the prompt", async () => {
+		const { readFileSync } = await import("node:fs");
+		const mod = await import("../index.ts");
+		const { pi, emit, entries } = fakePi();
+		mod.default(pi);
+		const cwd = mkdtempSync(join(tmpdir(), "jevext-"));
+		const statuses: string[] = [];
+		const ctx = { ...ctxFor(cwd, entries), hasUI: true, ui: { notify() {}, setStatus: (_k: string, t: string) => statuses.push(t) } };
+		await emit("session_start", {}, ctx);
+		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const reduced = await emit("tool_result", { toolName: "read", toolCallId: "r1", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], isError: false }, ctx);
+		expect(reduced?.content?.[0]?.text.length).toBeLessThan(code.length);
+		expect(statuses.at(-1)).toMatch(/^jev-memory\(mock\) \(presend −\d/); // no usage yet: no percentage
+		const r1 = { ...toolResult("r1", reduced.content[0].text), details: reduced.details } as any;
+		const msgs = [user("task"), assistant("reading", [{ id: "r1", name: "read", arguments: { path: "src/categories.js" } }]), r1];
+		await emit("context", { messages: msgs }, ctx);
+		const a = { ...assistant("done"), usage: { input: 1000, cacheRead: 0, output: 10 } } as any;
+		await emit("message_end", { message: a }, ctx);
+		const last = statuses.at(-1)!;
+		const m = /^jev-memory\(mock\) −(\d+)% of input \(presend −[\d.]+k · 1\/1 · 0 recalls, pruned −0\.0k · 0, 0 notes\)$/.exec(last);
+		expect(m, last).not.toBeNull();
+		const saved = Math.round(code.length / 4) - Math.round(reduced.content[0].text.length / 4);
+		const expected = Math.round((100 * saved) / (1000 + saved));
+		expect(Math.abs(Number(m![1]) - expected)).toBeLessThanOrEqual(2);
+	});
+});

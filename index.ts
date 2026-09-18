@@ -78,6 +78,8 @@ export default function (pi: ExtensionAPI) {
 	let memoryPath = "";
 	let logPath = "";
 	let totals = { pruned: 0, applied: 0, notes: 0, calls: 0, cacheRead: 0, input: 0 };
+	/** Tokens kept out of the prompt, summed over every LLM call of the session (a compressed result saves on each later call too). */
+	let cut = { presend: 0, pruned: 0 };
 	let durableQueue: DurableNote[] = [];
 	let firstUser = "";
 	let latestUser = "";
@@ -89,10 +91,21 @@ export default function (pi: ExtensionAPI) {
 		} catch {}
 	};
 
+	/** Share of all input tokens this session that jev kept out of the prompt: cut / (sent + cut), from the provider's own usage counts. */
+	const cutShare = () => {
+		const sent = totals.input + totals.cacheRead;
+		const kept = cut.presend + cut.pruned;
+		return sent > 0 ? Math.round((100 * kept) / (sent + kept)) : undefined;
+	};
+	const statusText = () => {
+		const tag = usingMock ? "jev-memory(mock)" : "jev-memory";
+		const pct = cutShare();
+		const lead = pct === undefined ? tag : `${tag} −${pct}% of input`;
+		return `${lead} (presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k · ${presendTotals.compressed}/${presendTotals.considered} · ${presendTotals.recalls} recalls, pruned −${(totals.pruned / 1000).toFixed(1)}k · ${totals.applied}, ${totals.notes} notes)`;
+	};
 	const status = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
-		const tag = usingMock ? "jev-memory(mock)" : "jev-memory";
-		ctx.ui.setStatus("jev-memory", `${tag} presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k (${presendTotals.compressed}/${presendTotals.considered}, ${presendTotals.recalls} recalls), pruned −${(totals.pruned / 1000).toFixed(1)}k (${totals.applied}), ${totals.notes} notes`);
+		ctx.ui.setStatus("jev-memory", statusText());
 	};
 
 	const persist = (d: Decision) => pi.appendEntry(ENTRY_TYPE, { kind: "decision", decision: { ...d } });
@@ -113,6 +126,7 @@ export default function (pi: ExtensionAPI) {
 		callIndex = 0;
 		lastCallAt = 0;
 		totals = { pruned: 0, applied: 0, notes: 0, calls: 0, cacheRead: 0, input: 0 };
+		cut = { presend: 0, pruned: 0 };
 		firstUser = "";
 		latestUser = "";
 		fullOutputs.clear();
@@ -324,6 +338,15 @@ export default function (pi: ExtensionAPI) {
 		totals.pruned = 0;
 		for (const d of ledger.values()) if (d.status === "applied") totals.pruned += d.tokensBefore;
 		totals.calls++;
+		// What this call would have cost without jev: every compressed result still in the prompt, plus what was pruned.
+		let presentSaved = 0;
+		for (const m of result.messages) {
+			if (m.role !== "toolResult") continue;
+			const rec = recordById.get(m.toolCallId);
+			if (rec) presentSaved += Math.max(0, rec.tokensBefore - rec.tokensAfter);
+		}
+		cut.presend += presentSaved;
+		cut.pruned += Math.max(0, result.tokensOriginal - result.tokensSent);
 
 		const stats: CallStats = {
 			call: callIndex,
@@ -337,18 +360,19 @@ export default function (pi: ExtensionAPI) {
 			pendingHeld: result.pendingHeld,
 			coldCache,
 		};
-		log({ event: "context", ...stats, reason, pendingTokens: pending.tokens, tailTokens: pending.tailTokens, inflight: inflight.size });
+		log({ event: "context", ...stats, reason, pendingTokens: pending.tokens, tailTokens: pending.tailTokens, inflight: inflight.size, presendSavedInPrompt: presentSaved });
 		status(ctx);
 		return { messages: result.messages };
 	});
 
 	// Cache accounting from the provider's own usage numbers.
-	pi.on("message_end", async (event) => {
+	pi.on("message_end", async (event, ctx) => {
 		const m = event.message;
 		if (m.role !== "assistant") return;
 		totals.cacheRead += m.usage?.cacheRead ?? 0;
 		totals.input += m.usage?.input ?? 0;
 		log({ event: "usage", call: callIndex, input: m.usage?.input, cacheRead: m.usage?.cacheRead, output: m.usage?.output, model: m.model });
+		if (ctx.hasUI) status(ctx);
 	});
 
 	// Compaction is a full prefix rewrite anyway: apply everything pending first.
@@ -540,6 +564,7 @@ export default function (pi: ExtensionAPI) {
 					`presend: ${presendTotals.compressed}/${presendTotals.considered} large results compressed, ≈${presendTotals.tokensSaved} tokens saved, ${presendTotals.recalls} recalls`,
 					`post-send: calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
 					`cache: read=${totals.cacheRead} uncached=${totals.input} hit=${hit}%`,
+					`input cut: ${cutShare() ?? 0}% of the session's input tokens (≈${cut.presend + cut.pruned} of ${totals.input + totals.cacheRead + cut.presend + cut.pruned}: presend ${cut.presend}, pruned ${cut.pruned}, summed over ${totals.calls} calls)`,
 					`memory file: ${memoryPath} (+${totals.notes} notes this session)`,
 				].join("\n"),
 				"info",

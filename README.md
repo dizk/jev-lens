@@ -111,7 +111,10 @@ lines the model did not get marked `−` (press `t` to switch to exactly what wa
 `/jev-memory decisions` lists post-send decisions with probabilities, `/jev-memory file` prints the memory file.
 In the transcript, a compressed `read`/`bash`/`grep`/`find`/`ls` result shows a header line
 `⌁ jev-memory outline · 179 of 1524 tokens (−88 %)` and, expanded (ctrl+e), the text the model saw. The footer shows
-session totals. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every call is logged to
+session totals, leading with the share of the session's input tokens jev kept out of the prompt:
+`jev-memory −38% of input (presend −12.3k · 5/8 · 1 recalls, pruned −4.0k · 3, 2 notes)`. The share is
+cut / (sent + cut), where sent is the provider's own input plus cache-read counts over all calls and cut is what every
+compressed or pruned result saved on every call it was part of, so a result compressed early counts on each later call. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every call is logged to
 `<project>/.pi/jev-memory.log` (JSON lines).
 
 ### Configuration (environment)
