@@ -1,22 +1,24 @@
 # pi-jev-memory
 
-A [pi](https://github.com/earendil-works/pi-mono) extension that routes conversation content into three buckets using
-[jev](https://docs.typesafe.ai) (TypeSafe's System One model) as a fast, calibrated classifier:
+A [pi](https://github.com/earendil-works/pi-mono) extension that **compresses large tool results before they reach the
+model**, using [jev](https://docs.typesafe.ai) (TypeSafe's System One model) to select useful views and code blocks.
+The agent gets a smaller result now and can use `recall` to retrieve omitted text when needed.
 
-| bucket | what happens | where |
-|---|---|---|
-| **context** (keep) | sent to the model verbatim | the prompt |
-| **trim** | head + tail only; the middle is dropped | the prompt |
-| **forget** | replaced by a one-line stub; re-run the tool to get it back | the prompt |
-| **file** (durable) | appended to `<project>/.pi/jev-memory.md`, injected into the system prompt at the next session start | long-term memory |
+**Pre-send compression is the main cost lever.** Avoiding the first send saves uncached input tokens without rewriting
+an already-cached message. Pruning later can free context, but may cost more by invalidating part of the prompt cache.
 
-The point is not just to shrink the prompt. It is to shrink it **without breaking the provider's prompt cache**, and,
-since everything sent once is cached cheaply afterwards, to decide *before first send* how much of a large output to send.
+The extension has three complementary layers, all enabled by default:
+
+1. **Pre-send compression:** send outlines, relevant code blocks or filtered output instead of the entire result.
+2. **Cache-aware post-send pruning:** after the agent reacts, keep, trim or stub results when the pruning policy permits.
+3. **Durable notes:** retain selected project facts and preferences for future sessions.
 
 ## Pre-send compression (the cost lever)
 
-Large tool results (default: over 1200 estimated tokens) never reach the prompt verbatim by default. In pi's `tool_result`
-hook, code builds candidate **views** that are strict subsets of the output, with line numbers:
+Large text tool results (default: at least 1200 estimated tokens, estimated as characters / 4) are considered for
+compression in pi's `tool_result` hook. Results containing images and calls to `recall` are excluded. Code builds
+candidate **views** from the output, with line numbers; some lines are shortened or normalized, and omission markers
+are added. Full text is still sent when no suitable reduced view is available or classification fails:
 
 | view | for | keeps |
 |---|---|---|
@@ -26,38 +28,67 @@ hook, code builds candidate **views** that are strict subsets of the output, wit
 | `signals` | command output | errors, warnings, failing tests, summary lines, the tail |
 | `sample` | tabular or log-like data | header, a dozen rows, the count |
 | `head_tail` | anything | first and last lines |
+| `testlog` | test output | failures, assertions, tracebacks and summaries |
+| `tree` | directory listings | a sample of entries per directory, with omission counts |
+| `matches` | search output | first matches per file, with omission counts |
+| `log` | repetitive output | representative repeated lines, errors and the tail |
 
 Code structure comes from tree-sitter (grammars from `@vscode/tree-sitter-wasm` plus `@binclusive/tree-sitter-kotlin-wasm`):
 TypeScript, TSX, JavaScript, Kotlin, Java, Rust, Python, Go, C, C++, C#, Ruby, PHP, Bash, CSS. Large classes and impl blocks
 are split into their members. Other languages fall back to regex heuristics that know the common declaration keywords.
 
-jev answers two questions over the task, the agent's reasoning before the call, and a preview of each view: *which view
-is the smallest that still suffices* (Choice) and *will the next step need the exact full text* (Noul). Full wins on any
-doubt. The full output is kept in the result's `details` (persisted in the session, never sent) and served by a `recall`
-tool the agent can call with an id, a line range or a pattern. Every recall is logged: it is the signal that a view was
-too small. Set `JEV_MEMORY_PRESEND=0` to turn this off.
+jev answers two questions over the task, the assistant's text before the call (not hidden thinking), and a preview of
+each view: *which view is the smallest that still suffices* (Choice) and *will the next step need the exact full text*
+(Noul). Thresholds normally decide when to send full text. For code, the default `outline` policy bypasses those gates
+when an outline is available, then asks jev which block bodies to expand. If the expanded view reaches 90 % of the
+original character count, full text is sent instead.
 
-## The cache-aware cut
+When a result is compressed, its full output is kept in `details` (persisted in the session, not included in the model
+prompt) and served by a `recall` tool using an id, a line range or a pattern. This storage covers pre-send compression,
+not results that were only pruned post-send; those must be obtained by re-running the original tool. Every recall is
+logged as feedback on the reduced view. Set `JEV_MEMORY_PRESEND=0` to turn pre-send compression off.
+
+## Post-send pruning (the context-budget layer)
+
+This is a secondary pass, not the source of the initial pre-send savings. It classifies the result the agent saw
+(which may already be compressed) after the agent has reacted to it:
+
+| decision | what happens in later prompts |
+|---|---|
+| **keep** | leave the result unchanged, including any pre-send compression |
+| **trim** | keep the head and tail; drop the middle |
+| **forget** | replace the result with a one-line stub; re-run the tool if needed |
 
 Prompt caches match on an exact prefix. Any edit to an already-sent message invalidates the cache from that point on.
-So the extension follows three rules:
+The extension limits repeated rewrites using persisted decisions:
 
-1. **Decide once.** Every tool result is classified exactly once, after the agent has *reacted* to it (the next assistant
-   message is part of the evidence: "given what the agent did next, is this output still needed?").
-2. **Apply at the next call, then freeze.** A decision is applied in pi's `context` hook right before the next LLM call and
-   is persisted to the session. From then on the same transform is re-applied identically on every call, so the prefix
-   never drifts. Decisions survive `/resume`, `/fork` and reload.
-3. **Never move backwards.** Nothing older than the last applied decision is ever touched again. In `rolling` mode
-   (default) the cut lands two turns behind the head, so each call rewrites roughly one extra turn of cache. In `batch`
-   mode decisions are held and applied only when the cache is cold anyway (idle longer than the provider TTL, or at
-   compaction).
+1. **Classify after reaction.** Tool results of at least `JEV_MEMORY_MIN_TOKENS` are queued for classification after
+   the next assistant message supplies evidence of what happened next. Results still buffered at agent end are
+   classified without that reaction. Results with an existing decision or an in-flight classification are skipped.
+2. **Apply, then freeze the decision.** The `context` hook waits briefly for in-flight classifications and applies
+   pending decisions when the selected mode permits. Decisions are persisted and restored at session start; applied
+   decisions are re-applied on later calls. Transforms remain identical for unchanged input and configuration
+   (changing trim settings can change the rendered text).
+3. **Choose when to rewrite.** `budget` (default) applies pending prunes when their savings meet both the configured
+   minimum and a fraction of the tail they would rewrite. `rolling` applies them at the next context hook; `batch`
+   waits for a cold cache. All modes allow application after the configured idle TTL, and compaction marks pending
+   decisions as applied.
+
+There is no monotonic cut boundary: a late classification can still rewrite an older result after a newer decision
+has been applied. Persisted decisions prevent repeated reclassification, but do not guarantee an unchanged cache prefix.
 
 Tool results are never removed, only rewritten, because every `function_call` must keep a matching output.
+
+## Durable notes (cross-session memory)
+
+Separately from compression and pruning, jev assesses whether content is worth remembering across sessions.
+Selected notes are written to `<project>/.pi/jev-memory.md` and injected into the system prompt from a snapshot taken
+at the next session start. This is not a fourth pruning bucket: saving a note does not remove its source from the prompt.
 
 ## Install
 
 ```sh
-git clone <this repo> ~/repos/pi-jev-memory
+git clone https://github.com/dizk/pi-jev-memory.git ~/repos/pi-jev-memory
 cd ~/repos/pi-jev-memory && npm install
 echo 'TYPESAFE_API_KEY=...' > .env
 pi -e ~/repos/pi-jev-memory/index.ts
@@ -65,7 +96,7 @@ pi -e ~/repos/pi-jev-memory/index.ts
 
 Without a key the extension runs with a mock classifier and warns at startup.
 
-Inside pi: `/jev-memory` shows stats, `/jev-memory list` lists every compressed tool result of the session with tokens
+Inside pi: `/jev-memory` shows stats, `/jev-memory list` lists the latest 200 pre-send-compressed tool results with tokens
 before and after, `/jev-memory diff [n]` opens an overlay for the n-th latest one showing the original output with the
 lines the model did not get marked `−` (press `t` to switch to exactly what was sent, `Esc` to close),
 `/jev-memory decisions` lists post-send decisions with probabilities, `/jev-memory file` prints the memory file.
@@ -82,26 +113,41 @@ session totals. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every cal
 | `JEV_MEMORY_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` | `0.5` / `1000` | budget mode: apply when pending prunes remove at least this share of the tail they rewrite, and at least this many tokens |
 | `JEV_MEMORY_FORGET_BELOW` | `0.25` | P(needed) below this → forget |
 | `JEV_MEMORY_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
-| `JEV_MEMORY_DURABLE_ABOVE` | `0.7` | P(durable) above this → memory file |
+| `JEV_MEMORY_DURABLE_ABOVE` | `0.7` | text notes require P(durable) above this; tool pointers require P(durable) above `max(this, 0.85)` |
 | `JEV_MEMORY_MIN_TOKENS` | `150` | smaller tool results are never touched |
 | `JEV_MEMORY_CLASSIFY_WAIT_MS` | `2500` | how long the context hook waits for in-flight jev calls |
 | `JEV_MEMORY_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
-| `JEV_MEMORY_DISABLED` | unset | `1` = classify and log, but never prune (shadow mode) |
+| `JEV_MEMORY_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; classification, logging and memory notes remain active. Previously applied decisions are still replayed. |
 | `JEV_MEMORY_PRESEND` | `1` | `0` turns pre-send compression off |
 | `JEV_MEMORY_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
 | `JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
 | `JEV_MEMORY_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
 | `JEV_MEMORY_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output; the question is phrased for edits, and test runs rarely need exact full text (+3.3 points on the benchmark, no extra misses) |
-| `JEV_MEMORY_PRESEND_CODE_POLICY` | `outline` | `outline`: source files are never sent whole; the agent gets every signature plus the block bodies jev expands, and `recall` for the rest. `gate`: let jev's needs-full gate choose full. |
-| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | separate needs-full threshold for source code (lower it for a safer setting; 0.35 cost 10 points of code savings on the benchmark for no measured gain) |
+| `JEV_MEMORY_PRESEND_CODE_POLICY` | `outline` | prefer an available code outline, then expand selected bodies; fall back to full if expansion reaches 90 % of original size. `gate`: use needs-full/full-mass gates instead. |
+| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold; bypassed when outline policy finds an outline |
+| `JEV_MEMORY_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 disables the check); bypassed by outline-first code selection |
+| `JEV_MEMORY_TRIM_HEAD` / `_TRIM_TAIL` | `15` / `15` | lines retained at each end for post-send trimming |
+| `JEV_MEMORY_STATE_HEAD` / `_STATE_TAIL` | `2500` / `800` | maximum output characters in post-send classifier excerpts |
+| `JEV_MEMORY_MODEL` | `jev-latest` | classifier model |
+| `JEV_MEMORY_CLASSIFIER` | unset | `mock` forces deterministic classifiers without API calls |
+| `JEV_MEMORY_LOG` | `1` | `0` disables JSON-lines logging |
+| `JEV_MEMORY_UI` | `1` | `0` disables custom built-in tool rendering |
+| `JEV_MEMORY_VARIANT` | unset | JSON file with `config`, `prompts` and `views` overrides (also accepts autoresearch's `{ variant }` wrapper); config overrides take precedence over environment settings |
+
+`TYPESAFE_API_KEY` enables the real classifier. The extension loads `.env` from its own directory (and `src/`), not
+from the target project; existing nonempty environment values take precedence.
 
 ## How jev is used
 
-One request per tool result, three independent yes/no questions over the same state
+Post-send classification uses one request per eligible tool result, with three yes/no questions over the same state
 (`src/classifier.ts`): *needed*, *outcome only*, *durable*. The state holds the task (first and latest user message),
 the tool call and a head/tail excerpt of its output, and what the agent said and called next. User messages and assistant
-text get a single *durable* question. jev returns probabilities, not text; everything that becomes text (stubs, trims,
-memory lines) is assembled by code from the original content, so nothing is hallucinated into the prompt.
+text between 40 and 6000 characters get a single *durable* question (disabled with the mock classifier). jev returns
+probabilities, not generated prose: stubs, trims and memory notes are assembled by code. Tool memory notes store only
+a call summary and success/failure marker; user and assistant notes are truncated excerpts. Notes are deduplicated,
+capped at 150 bullets / 8000 characters of bullet text, and loaded as a stable snapshot at session start.
+
+Pre-send selection and optional block expansion use separate requests, in addition to post-send classification.
 
 ## Evaluation
 
@@ -129,8 +175,8 @@ Headline from the first night of runs (details and caveats in `STATUS.md`): deci
 holds (frozen decisions, stable prefix), but under a 10× prompt-cache discount pruning after first send is a
 **context-budget** tool, not a cost tool. Rolling mode cut input tokens 19 % on long sessions and still cost 17 % more
 because each prune rewrites the cached prefix; budget mode keeps the cache (65 % hit vs 70 % baseline) and passed
-12/13 tasks (baseline 13/13). The savings have to come from not sending large outputs in the first place, which is the
-next step.
+12/13 tasks (baseline 13/13). The pre-send compression implemented here targets those costs by avoiding the initial
+send of unnecessary output.
 
 ## Using this as a reference
 
@@ -138,7 +184,7 @@ The pieces are independent of pi and can be lifted into another agent:
 
 | piece | file | depends on |
 |---|---|---|
-| candidate views (outline, focus, signals, testlog, tree, matches, log, sample, head/tail) | `src/views.ts` | nothing |
+| candidate views (outline, focus, signals, testlog, tree, matches, log, sample, head/tail) | `src/views.ts` | regex views need no external packages; async code views optionally load `src/treesitter.ts` |
 | tree-sitter blocks and signatures | `src/treesitter.ts` | `web-tree-sitter`, `@vscode/tree-sitter-wasm`, `@binclusive/tree-sitter-kotlin-wasm` |
 | the jev questions, state shape, decision rule, block expansion | `src/presend.ts` | `@typesafe-ai/sdk` |
 | post-send decisions and the frozen, cache-aware ledger | `src/classifier.ts`, `src/policy.ts`, `src/ledger.ts` | `@typesafe-ai/sdk` |
@@ -146,7 +192,8 @@ The pieces are independent of pi and can be lifted into another agent:
 | benchmark and metrics on real trajectories | `eval/presend-score.ts`, `eval/bench/` | run `eval/bench/fetch.sh` first |
 
 The order of operations that matters, in one paragraph: when a tool result arrives and is large, build views from the
-text (code, no model), ask jev once which view suffices and whether the exact text is needed, for code run the second
-question per block, replace the content with the chosen view plus a footer that names a `recall` tool, and keep the full
-text where the model cannot see it. Never remove a tool result, only rewrite it. Decide once, persist the decision, and
-re-apply it identically on every later call so the prompt prefix stays cacheable.
+text (code, no model), ask jev which view suffices and whether exact text is needed, apply the configured selection
+policy, and optionally expand code blocks in a second request. If a reduced view wins, replace the content with that
+view plus a footer naming `recall`, and keep the full text in result details. Post-send classification then decides
+whether to keep, trim or stub eligible results. Persist and re-apply those decisions to avoid repeated changes to
+already-transformed messages. Never remove a tool result, only rewrite it.
