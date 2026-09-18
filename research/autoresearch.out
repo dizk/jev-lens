@@ -2,3 +2,9 @@
 [autoresearch] baseline objective 63.83 saved 68.3% editMiss 0.0%
 [autoresearch] iteration 1/8: asking openai-codex/gpt-5.6-luna
 [autoresearch] evaluating "kind-aware-minimal": Route routine command and code-orientation requests to compact views while reserving full text for exact edits, copying, or broad detail review.
+[autoresearch] "kind-aware-minimal" objective 68.48 (best 63.83) saved 73.9% editMiss 0.0% quoteMiss 0.0% refMiss 5.4% in 26s → KEEP
+[autoresearch] iteration 2/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "code-behavior-relevant": Prefer relevant over narrow code views when the task names an implementation or behavior, reducing identifier misses while retaining compact command views.
+[autoresearch] "code-behavior-relevant" objective -56.68 (best 68.48) saved 73.7% editMiss 25.0% quoteMiss 0.0% refMiss 5.4% in 27s → discard
+[autoresearch] iteration 3/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "preserve-behavior-context": Keep compact command views, but use relevant code context only for non-edit behavior analysis and retain full prose when its content may drive the next step.

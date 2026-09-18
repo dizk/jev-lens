@@ -150,7 +150,7 @@ const TEST_SUMMARY = /^=+ .*(passed|failed|error|skipped|deselected|xfailed|no t
 /** Is this command output a test run? */
 export function looksLikeTestLog(text: string): boolean {
 	const m = text.match(TEST_MARKERS);
-	return !!m && (text.match(/\b(passed|failed|✔|✖|not ok|ok \d)\b/g) ?? []).length >= 2;
+	return !!m && (text.match(/\b(passed|failed|✔|✖|not ok|ok \d)\b/gi) ?? []).length >= 2;
 }
 
 /**
@@ -158,7 +158,7 @@ export function looksLikeTestLog(text: string): boolean {
  * section (test id, assertion, the last frames of its traceback), the short summary, and the
  * final counts. Passing tests, dots and decorative bars are dropped.
  */
-export function testlogView(text: string, ctx = 2, maxFailLines = 60, maxIds = 40): View | undefined {
+export function testlogView(text: string, ctx = 2, maxFailLines = 60, maxIds = 25): View | undefined {
 	if (!looksLikeTestLog(text)) return undefined;
 	const lines = text.split("\n");
 	const keep = new Set<number>();
@@ -208,7 +208,15 @@ export function treeView(text: string, perDir = 8, terms: string[] = []): View |
 	const keep = new Set<number>();
 	for (let i = 0; i < Math.min(2, lines.length); i++) if (!/^\s*[\w./-]+\/?$/.test(lines[i].trim())) keep.add(i);
 	for (const idx of byDir.values()) for (const i of idx.slice(0, perDir)) keep.add(i);
-	if (lowered.length) for (let i = 0; i < lines.length; i++) { const l = lines[i].toLowerCase(); if (lowered.some((t) => l.includes(t))) keep.add(i); }
+	if (lowered.length) {
+		// match terms against the basename only, and ignore terms that match a large share of entries (repo names, common dirs)
+		const bases = lines.map((l) => l.trim().replace(/\/$/, "").split("/").pop()?.toLowerCase() ?? "");
+		for (const t of lowered) {
+			const hits = bases.map((b, i) => (b.includes(t) ? i : -1)).filter((i) => i >= 0);
+			if (hits.length === 0 || hits.length > Math.max(5, lines.length * 0.2)) continue;
+			for (const i of hits) keep.add(i);
+		}
+	}
 	const idx = [...keep].sort((a, b) => a - b);
 	if (idx.length >= lines.length * 0.8) return undefined;
 	return make("tree", lines, idx);

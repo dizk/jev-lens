@@ -1,64 +1,68 @@
 {
  "variant": {
-  "name": "baseline"
+  "name": "kind-aware-minimal",
+  "hypothesis": "Route routine command and code-orientation requests to compact views while reserving full text for exact edits, copying, or broad detail review.",
+  "prompts": {
+   "viewInstructions": "A coding agent working on `task` just called `agent.tool` with `agent.args` (its reasoning right before the call is `agent.text_before_call`). Choose the smallest view that supports the next step. For routine command results, prefer `signals` or `head_tail`; for code, prefer `outline`, `focus`, or `relevant` when the task names specific code. Choose `full` only when exact text, broad details, copying, quoting, or an edit may depend on omitted content. When uncertain between compact views, choose the one that preserves the named identifiers and likely next-step evidence."
+  }
  },
- "objective": 63.83246367161356,
+ "objective": 68.482906546558,
  "summary": {
   "results": 428,
-  "compressed": 334,
+  "compressed": 375,
   "tokens": 1521677,
-  "sent": 482802,
-  "savedPct": 68.27171600806216,
+  "sent": 397816,
+  "savedPct": 73.85673832225893,
   "editable": 4,
   "editMiss": 0,
   "editMissPct": 0,
   "quoteMiss": 0,
   "quoteMissPct": 0,
-  "refMiss": 19,
-  "refMissPct": 4.4392523364485985,
+  "refMiss": 23,
+  "refMissPct": 5.373831775700935,
   "views": {
-   "full": 94,
-   "signals": 236,
-   "testlog": 21,
-   "outline": 17,
-   "relevant": 25,
-   "tree": 18,
-   "focus": 16,
-   "head_tail": 1
+   "relevant": 45,
+   "signals": 243,
+   "testlog": 18,
+   "outline": 22,
+   "full": 53,
+   "head_tail": 8,
+   "focus": 21,
+   "tree": 18
   },
   "byKind": {
    "code": {
     "n": 74,
-    "savedPct": 28.305615550755938,
+    "savedPct": 49.22894168466523,
     "editMissPct": 0,
-    "refMissPct": 5.405405405405405
+    "refMissPct": 8.108108108108109
    },
    "command": {
     "n": 301,
-    "savedPct": 75.57100223824919,
+    "savedPct": 77.77086960126005,
     "editMissPct": 0,
     "refMissPct": 2.990033222591362
    },
    "prose": {
     "n": 29,
-    "savedPct": 58.22084073416222,
+    "savedPct": 78.91947898164594,
     "editMissPct": 0,
-    "refMissPct": 17.24137931034483
+    "refMissPct": 20.689655172413794
    },
    "listing": {
     "n": 22,
-    "savedPct": 61.94671737878814,
+    "savedPct": 70.53230280719507,
     "editMissPct": 0,
     "refMissPct": 4.545454545454546
    },
    "data": {
     "n": 2,
-    "savedPct": 0,
+    "savedPct": 14.981132075471699,
     "editMissPct": 0,
-    "refMissPct": 0
+    "refMissPct": 50
    }
   },
-  "objective": 63.83246367161356,
-  "meanMs": 325.4602803738318
+  "objective": 68.482906546558,
+  "meanMs": 340.95327102803736
  }
 }
