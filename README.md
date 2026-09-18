@@ -81,7 +81,7 @@ Inside pi: `/jev-memory` shows stats, `/jev-memory decisions` lists every decisi
 | `JEV_MEMORY_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
 | `JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
 | `JEV_MEMORY_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
-| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.35` | stricter needs-full threshold for source code |
+| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | separate needs-full threshold for source code (lower it for a safer setting; 0.35 cost 10 points of code savings on the benchmark for no measured gain) |
 
 ## How jev is used
 

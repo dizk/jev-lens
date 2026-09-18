@@ -14,3 +14,8 @@
 [autoresearch] "code-outline-first" objective 66.12 (best 68.48) saved 72.0% editMiss 0.0% quoteMiss 0.0% refMiss 5.8% in 27s → discard
 [autoresearch] iteration 5/8: asking openai-codex/gpt-5.6-luna
 [autoresearch] evaluating "code-focus-with-context": Keep compact command routing, but prefer outline over narrow focus for code unless the task explicitly identifies the needed symbols, reducing omitted-identifier misses.
+[autoresearch] "code-focus-with-context" objective -56.22 (best 68.48) saved 74.4% editMiss 25.0% quoteMiss 0.0% refMiss 5.6% in 25s → discard
+[autoresearch] iteration 6/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "command-signals-conservative": Keep aggressive command compression but preserve slightly more diagnostic context to reduce identifier misses without changing code edit safety.
+[autoresearch] "command-signals-conservative" objective 63.82 (best 68.48) saved 68.3% editMiss 0.0% quoteMiss 0.0% refMiss 4.4% in 26s → discard
+[autoresearch] iteration 7/8: asking openai-codex/gpt-5.6-luna
