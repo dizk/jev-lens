@@ -131,3 +131,22 @@ holds (frozen decisions, stable prefix), but under a 10× prompt-cache discount 
 because each prune rewrites the cached prefix; budget mode keeps the cache (65 % hit vs 70 % baseline) and passed
 12/13 tasks (baseline 13/13). The savings have to come from not sending large outputs in the first place, which is the
 next step.
+
+## Using this as a reference
+
+The pieces are independent of pi and can be lifted into another agent:
+
+| piece | file | depends on |
+|---|---|---|
+| candidate views (outline, focus, signals, testlog, tree, matches, log, sample, head/tail) | `src/views.ts` | nothing |
+| tree-sitter blocks and signatures | `src/treesitter.ts` | `web-tree-sitter`, `@vscode/tree-sitter-wasm`, `@binclusive/tree-sitter-kotlin-wasm` |
+| the jev questions, state shape, decision rule, block expansion | `src/presend.ts` | `@typesafe-ai/sdk` |
+| post-send decisions and the frozen, cache-aware ledger | `src/classifier.ts`, `src/policy.ts`, `src/ledger.ts` | `@typesafe-ai/sdk` |
+| the hook wiring for pi (tool_result, context, recall tool, UI) | `index.ts`, `src/ui.ts` | pi |
+| benchmark and metrics on real trajectories | `eval/presend-score.ts`, `eval/bench/` | run `eval/bench/fetch.sh` first |
+
+The order of operations that matters, in one paragraph: when a tool result arrives and is large, build views from the
+text (code, no model), ask jev once which view suffices and whether the exact text is needed, for code run the second
+question per block, replace the content with the chosen view plus a footer that names a `recall` tool, and keep the full
+text where the model cannot see it. Never remove a tool result, only rewrite it. Decide once, persist the decision, and
+re-apply it identically on every later call so the prompt prefix stays cacheable.

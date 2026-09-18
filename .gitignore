@@ -4,3 +4,5 @@ dist/
 eval/runs/
 *.log
 .pi/
+eval/bench/openhands.jsonl
+eval/bench/rows-*.json
