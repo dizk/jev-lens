@@ -234,6 +234,17 @@ help on holdout. The next lever there is the second step itself: expand by *task
 "will it need the body", or send outline first and let `recall` fetch bodies on demand, which the live extension
 already supports and this benchmark cannot score.
 
+### Live check of the round-4 default on gpt-5.6-luna (marathon × 3)
+
+| condition | passed | uncached / run | cached / run | hit | final prompt | cost units / run | compressed | recalls |
+|---|---|---|---|---|---|---|---|---|
+| baseline | 3/3 | 52.9k | 200.2k | 79 % | 17.7k | 72.9k | | 0 |
+| pre-send, first version (64.7 % offline) | 3/3 | 51.4k | 157.7k | 75 % | 14.7k | 67.1k | 10/14 | 0 |
+| pre-send, round-4 default (74.1 % offline) | 3/3 | 41.3k | 148.3k | 78 % | 14.8k | **56.1k** | 9/13 | 0 |
+
+Cost per run −23 % against baseline (was −8 % with the first version), cache hit back at baseline level, same pass rate,
+zero recalls. The offline gains show up live in the same direction and roughly the same proportion.
+
 ## Procedural graph prototype (`eval/action-graph.ts`)
 
 Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
