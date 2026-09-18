@@ -1,0 +1,9 @@
+[autoresearch] baseline evaluation
+[autoresearch] baseline objective 55.16 saved 55.2% editMiss 0.0%
+[autoresearch] iteration 1/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "command-signals": Explicitly favor the compact signals view for command results when the agent only needs execution outcomes, increasing command savings without affecting edit recall.
+[autoresearch] "command-signals" objective 64.12 (best 55.16) saved 64.1% editMiss 0.0% quoteMiss 0.0% in 22s → KEEP
+[autoresearch] iteration 2/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "code-structure": Explicitly guide code results toward outline or focus when the agent is orienting or locating identifiers, while reserving full or relevant for exact edits and body-level work to improve code savings without harming edit recall.
+[autoresearch] "code-structure" objective 66.07 (best 64.12) saved 66.1% editMiss 0.0% quoteMiss 0.0% in 19s → KEEP
+[autoresearch] iteration 3/8: asking openai-codex/gpt-5.6-luna

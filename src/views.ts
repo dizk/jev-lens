@@ -3,7 +3,7 @@
  * text (never generated), with line numbers so the agent can ask for exact ranges later.
  */
 
-export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "sample" | "head_tail";
+export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "sample" | "head_tail";
 
 export interface View {
 	kind: ViewKind;
@@ -51,13 +51,20 @@ const SIG_RE = /^\s*(export\s+|pub\s+|public\s+|private\s+|protected\s+|static\s
 const HEADING_RE = /^\s*(#{1,6}\s|=+\s*$|-+\s*$|\d+\.\s+[A-Z])/;
 const SIGNAL_RE = /\b(error|fail(ed|ing|ure)?|exception|traceback|panic|fatal|warn(ing)?|not ok|✖|✗|denied|refused|missing|cannot|undefined is not|is not defined|no such file|ENOENT|EACCES|timeout|timed out|assert|expected|actual)\b|^\s*at\s+\S+\s+\(|^ℹ\s|^#\s(pass|fail|tests)|failing|Tests:|Suites:|\d+\s+(passed|failed)/i;
 
+/** Collapse decorative runs (=====, -----, ......) and very long lines so views stay small. */
+export function tidyLine(l: string): string {
+	let out = l.replace(/([=\-_.*#~])\1{24,}/g, (m) => m.slice(0, 24) + "…");
+	if (out.length > 400) out = out.slice(0, 400) + " …";
+	return out;
+}
+
 function numbered(lines: string[], idx: number[]): string {
 	const width = String(lines.length).length;
 	const out: string[] = [];
 	let prev = -1;
 	for (const i of idx) {
 		if (prev >= 0 && i > prev + 1) out.push(`${" ".repeat(width)}  ⋯ ${i - prev - 1} lines omitted`);
-		out.push(`${String(i + 1).padStart(width)}│ ${lines[i]}`);
+		out.push(`${String(i + 1).padStart(width)}│ ${tidyLine(lines[i])}`);
 		prev = i;
 	}
 	if (prev >= 0 && prev < lines.length - 1) out.push(`${" ".repeat(width)}  ⋯ ${lines.length - 1 - prev} lines omitted`);
@@ -126,6 +133,46 @@ export function signalsView(text: string, ctx = 2, tail = 8): View {
 	return make("signals", lines, idx);
 }
 
+const TEST_MARKERS = /test session starts|passed|failed|FAILED|ERROR|✖|✔|not ok|^ok \d|Tests:|Test Suites:|# (pass|fail|tests)|PASS |FAIL |AssertionError|assert /m;
+const TEST_FAIL_LINE = /^(FAILED|ERROR) |^E\s{2,}|AssertionError|^\s*assert |✖|not ok|^\s+at .*\(|Error:|Exception|Traceback|^\s*File ".*", line \d+/;
+const TEST_SECTION = /^=+ (FAILURES|ERRORS|short test summary info|warnings summary) =+|^_{3,} .* _{3,}$|^(ℹ|✖) |^# (Subtest|Failure)/;
+const TEST_SUMMARY = /^=+ .*(passed|failed|error|skipped|deselected|xfailed|no tests ran).* =+$|^(Tests:|Test Suites:|Time:|Ran \d+ tests|OK|FAILED \(|ℹ (pass|fail|tests|duration)|# (pass|fail|tests))/;
+
+/** Is this command output a test run? */
+export function looksLikeTestLog(text: string): boolean {
+	const m = text.match(TEST_MARKERS);
+	return !!m && (text.match(/\b(passed|failed|✔|✖|not ok|ok \d)\b/g) ?? []).length >= 2;
+}
+
+/**
+ * Test run output reduced to what the agent acts on: the session header, every failing test's
+ * section (test id, assertion, the last frames of its traceback), the short summary, and the
+ * final counts. Passing tests, dots and decorative bars are dropped.
+ */
+export function testlogView(text: string, ctx = 2, maxFailLines = 60): View | undefined {
+	if (!looksLikeTestLog(text)) return undefined;
+	const lines = text.split("\n");
+	const keep = new Set<number>();
+	let inFailures = false;
+	let failLines = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const l = lines[i];
+		if (i < 3) keep.add(i);
+		if (TEST_SECTION.test(l)) { keep.add(i); inFailures = /FAILURES|ERRORS|_{3,}/.test(l) ? true : false; failLines = 0; continue; }
+		if (TEST_SUMMARY.test(l)) { keep.add(i); inFailures = false; continue; }
+		if (TEST_FAIL_LINE.test(l)) {
+			for (let j = Math.max(0, i - ctx); j <= Math.min(lines.length - 1, i + ctx); j++) keep.add(j);
+			continue;
+		}
+		if (inFailures && failLines < maxFailLines && l.trim()) { keep.add(i); failLines++; }
+	}
+	// always keep the last 5 lines (final summary)
+	for (let i = Math.max(0, lines.length - 5); i < lines.length; i++) keep.add(i);
+	const idx = [...keep].sort((a, b) => a - b);
+	if (idx.length >= lines.length * 0.8) return undefined;
+	return make("testlog", lines, idx);
+}
+
 /** Data files: header plus a sample of rows and the count. */
 export function sampleView(text: string, rows = 12): View {
 	const lines = text.split("\n");
@@ -185,6 +232,7 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 		cands.push(v);
 	};
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
+	if (kind === "command") add(testlogView(text, P.signalsCtx));
 	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
 	if (kind === "data") add(sampleView(text, P.sampleRows));
 	add(focusView(text, terms, P.focusCtx));

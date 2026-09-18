@@ -119,6 +119,18 @@ export async function treeSitterBlocks(path: string, text: string, maxBlocks = 4
 		const from = (pendingComment ?? startLine) + 1;
 		pendingComment = undefined;
 		const sig = lines[startLine].trim().slice(0, 120);
+		// Large classes: expose their methods as blocks so the second step can pick individual bodies.
+		const body = node.namedChildren.find((n) => n && (n.type === "class_body" || n.type === "block" || n.type === "declaration_list" || n.type === "field_declaration_list"));
+		const methods = body ? body.namedChildren.filter((n) => n && (n.type === "method_definition" || n.type === "function_definition" || n.type === "method_declaration" || n.type === "decorated_definition" || n.type === "function_item")) : [];
+		if (endLine - startLine > 40 && methods.length >= 2) {
+			blocks.push({ name: sig, from, to: methods[0]!.startPosition.row });
+			for (let k = 0; k < methods.length; k++) {
+				const mm = methods[k]!;
+				const mEnd = k + 1 < methods.length ? methods[k + 1]!.startPosition.row : endLine + 1;
+				blocks.push({ name: `${sig.replace(/[{:]\s*$/, "")} › ${lines[mm.startPosition.row].trim().slice(0, 80)}`, from: mm.startPosition.row + 1, to: mEnd });
+			}
+			continue;
+		}
 		blocks.push({ name: sig, from, to: endLine + 1 });
 	}
 	tree.delete();

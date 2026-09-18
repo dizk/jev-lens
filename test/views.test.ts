@@ -89,3 +89,20 @@ describe("extractTerms and buildCandidates", () => {
 		expect(footer(c.views[0], "x", 1)).toBe("");
 	});
 });
+
+describe("testlog view", () => {
+	it("keeps failures and summary, drops passing tests and bars", async () => {
+		const { testlogView, looksLikeTestLog, tidyLine } = await import("../src/views.ts");
+		const pyt = ["=".repeat(300) + " test session starts " + "=".repeat(300), "platform linux -- Python 3.11", "collected 40 items", "", "tests/test_a.py ........F.....                       [ 50%]", "tests/test_b.py ....................                 [100%]", "", "=".repeat(200) + " FAILURES " + "=".repeat(200), "_".repeat(60) + " test_parse_date " + "_".repeat(60), "", "    def test_parse_date():", ">       assert parse('2024-01-31') == '2024-01-31'", "E       AssertionError: assert '2024-03-02' == '2024-01-31'", "", "tests/test_a.py:12: AssertionError", "=".repeat(100) + " short test summary info " + "=".repeat(100), "FAILED tests/test_a.py::test_parse_date - AssertionError", "=".repeat(120) + " 1 failed, 39 passed in 0.42s " + "=".repeat(120)].join("\n");
+		expect(looksLikeTestLog(pyt)).toBe(true);
+		const v = testlogView(pyt)!;
+		expect(v.kind).toBe("testlog");
+		expect(v.text).toContain("AssertionError");
+		expect(v.text).toContain("FAILED tests/test_a.py::test_parse_date");
+		expect(v.text).toContain("1 failed, 39 passed");
+		expect(v.text).not.toContain("=".repeat(30));
+		expect(v.text).not.toContain("test_b.py ....");
+		expect(tidyLine("=".repeat(300)).length).toBeLessThan(30);
+		expect(testlogView("hello world\nno tests here")).toBeUndefined();
+	});
+});

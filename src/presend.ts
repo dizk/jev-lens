@@ -56,6 +56,7 @@ const VIEW_DESCRIPTIONS: Record<ViewKind, string> = {
 	sample: "Header plus a sample of rows and the total count, for tabular or log-like data. Enough to learn the shape of the data, not its contents.",
 	head_tail: "The first and last lines only. Enough to see what the output is and how it ends.",
 	relevant: "Outline plus the full bodies of the blocks the agent will need.",
+	testlog: "A test run reduced to the failing tests with their assertion and traceback, the short summary and the final counts. Passing tests and decoration are dropped. Enough for reacting to a test run; not enough to see the output of passing tests.",
 };
 
 export function buildPresendState(
