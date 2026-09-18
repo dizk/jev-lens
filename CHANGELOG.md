@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 (2026-09-19)
+
+Use pi 0.84.3 or newer with this release.
+
+- Added subcommand completion, available `diff` result numbers, and `/jev-lens help`.
+- Invalid commands and result numbers now show usage errors instead of unrelated statistics or results.
+- `/jev-lens key` now masks terminal input and supports paste and cancellation. Nonterminal modes do not use a visible input fallback.
+- Key setup now reports storage failures, forced mock mode, disabled compression, and environment-key precedence.
+- Compression failures now show a warning and a degraded status. Statistics include failure counts and recovery status without repeated warnings.
+- Uncompressed results, errors, and streaming updates now use pi's built-in tool renderers.
+- The footer now includes restored token savings after reload or resume and labels restored results separately from new attempts.
+- Corrected setup documentation, including key resolution order and mock behavior.
+
 ## 0.2.1 (2026-09-19)
 
 - The README and the other documentation are rewritten in plain English. No code changed.
