@@ -141,8 +141,20 @@ New machinery built for this: tree-sitter outlines and block boundaries (`@vscod
 | + testlog view, method blocks | 67.0 % | 0/13 | 4 (0.6 %) | (not measured) | | signals 363, full 184, testlog 44, relevant 41 |
 | + tree view, default prompts | 69.3 % | 0/13 | 4 (0.6 %) | 27 (3.9 %) | 64.2 | signals 366, full 146, relevant 45, testlog 44, tree 31, outline 30 |
 | + autoresearch best prompt (round 1) | 68.8 % | 0/13 | 4 (0.6 %) | 26 (3.8 %) | 63.9 | signals 365, full 153, relevant 47, testlog 45, tree 31, outline 26 |
+| + test-id index in testlog, task terms in tree, stricter ref-miss | 65.1 % | 0/13 | 4 (0.6 %) | 12 (1.8 %) | 62.2 | signals 268, testlog 142, full 153, relevant 42, outline 30, tree 29 |
+| + code needs-full 0.35, focus→outline for code | 63.5 % | 0/13 | 4 (0.6 %) | 11 (1.6 %) | 60.7 | code savings fell to 18 % |
+| **current default** (code threshold back to 0.5, focus→outline kept, big assignments as blocks) | 64.7 % | 0/13 | 4 (0.6 %) | 12 (1.8 %) | 61.7 | signals 268, testlog 143, full 157, relevant 46, tree 29, outline 26 |
+| + autoresearch best prompt (round 2) | ROUND2_ROW |
 
-Per kind, default prompts: command 78.5 % saved (ref-miss 3.0 %), code 29.6 % (4.8 %), prose 59.2 % (9.5 %), listing 49.9 % (6.7 %).
+The last three rows trade about 4 points of savings for halving ref-miss: the `testlog` view now keeps a capped index of
+test ids (agents pick one to re-run), and `tree` keeps entries matching task terms. Under the objective's weights that
+looks like a small loss; I chose the safer default because a ref-miss is a real "the agent learned something from what we
+dropped", while the 4 points are cheap tokens. `testIds` is a view parameter, set it to 0 for the leaner variant.
+One run (v6) showed a single edit-miss caused by jev choosing `focus` for a code file with low confidence; jev's answers
+vary by about ±0.2 between identical runs, so thresholds near 0.5 flip. The fix that costs nothing is structural: for code,
+`focus` is upgraded to `outline` (and then possibly `relevant`), which closed that case in the runs after.
+
+Per kind, current default: command 73.2 % saved (ref-miss 1.5 %), code 28.3 % (2.4 %), prose 53.3 % (0 %), listing 47.2 % (4.4 %).
 
 ### Autoresearch
 

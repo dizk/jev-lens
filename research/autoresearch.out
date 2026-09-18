@@ -19,3 +19,7 @@
 [autoresearch] evaluating "command-signals-conservative": Keep aggressive command compression but preserve slightly more diagnostic context to reduce identifier misses without changing code edit safety.
 [autoresearch] "command-signals-conservative" objective 63.82 (best 68.48) saved 68.3% editMiss 0.0% quoteMiss 0.0% refMiss 4.4% in 26s → discard
 [autoresearch] iteration 7/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "code-interaction-relevant": Use relevant code views for interaction and behavior questions involving named functions, while retaining compact command views and full text for exact edits or quotes.
+[autoresearch] "code-interaction-relevant" objective 67.43 (best 68.48) saved 73.0% editMiss 0.0% quoteMiss 0.0% refMiss 5.6% in 28s → discard
+[autoresearch] iteration 8/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "protect-content-details": Retain compact command and code routing while using full views for prose or data whose specific facts may drive the next step, reducing reference misses.

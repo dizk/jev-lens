@@ -108,6 +108,11 @@ node --import tsx eval/report.ts                       # compare conditions
 `eval/fixture` is a small dependency-free JavaScript project with planted bugs; `eval/tasks/tasks.json` holds ten
 tasks (eight short, a five-part compound and an eight-part marathon), each scored by a hidden test.
 
+Benchmark on 100 real OpenHands trajectories (685 large tool results, 2.26M tokens, `eval/bench/`): the default
+pre-send configuration sends 64.7 % fewer tokens for large results with 0 of 13 later edits missing their old text,
+0.6 % quote-misses and 1.8 % ref-misses (an identifier the agent then used that only existed in the dropped part).
+Details, the metric definitions and the autoresearch loop are in `STATUS.md`.
+
 Headline from the first night of runs (details and caveats in `STATUS.md`): decisions are sensible and the mechanism
 holds (frozen decisions, stable prefix), but under a 10× prompt-cache discount pruning after first send is a
 **context-budget** tool, not a cost tool. Rolling mode cut input tokens 19 % on long sessions and still cost 17 % more
