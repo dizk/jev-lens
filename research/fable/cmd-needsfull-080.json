@@ -1,0 +1,1 @@
+{ "name": "cmd-needsfull-080", "hypothesis": "Same as 0.65 but nearly disabling the needs-full gate for commands, to measure whether ref-miss rises.", "config": { "presendCommandNeedsFullAbove": 0.8 } }
