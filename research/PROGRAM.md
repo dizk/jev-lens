@@ -12,7 +12,7 @@ for code, which block bodies to expand. The full text stays available through re
 - **saved%**: tokens not sent across all large tool results (≥ presendMinTokens).
 - **edit-miss%**: among large `read` (or bash file display) results that the agent later edited (within 12 assistant
   messages, before re-reading the file), the share where the edit's first old-text line was not in the view. This is the
-  harm metric and it is weighted 5×; on the 500-trajectory slice (46 editable results) the outline-first code policy
+  harm metric and it is weighted 5×. On the 500-trajectory slice (46 editable results) the outline-first code policy
   scored 17 % here and lost to the `gate` policy despite saving 3 points more. Never propose `presendCodePolicy: "outline"`.
 - **quote-miss%**: share of results where the agent's next message quotes a 40+ char line that only exists in the omitted part.
 - **ref-miss%**: share of results where the agent's next two steps use an identifier that only existed in the omitted part
@@ -21,7 +21,7 @@ for code, which block bodies to expand. The full text stays available through re
 Kinds of results: `command` (bash output, the majority), `code`, `prose`, `data`, `listing`.
 Views: `full`, `outline`, `relevant` (outline + expanded blocks), `focus`, `signals`, `testlog`, `tree`, `matches`, `log`,
 `sample`, `head_tail`, and `sections` (command output: the first line of every section, i.e. grep match groups, JSON
-keys, headings, marker lines, paragraphs; when chosen, a second jev step asks per section whether the agent needs its
+keys, headings, marker lines, paragraphs. When it is chosen, a second jev step asks per section whether the agent needs its
 contents and puts those back, giving `relevant`).
 
 The `sections` route has its own knobs: `config.presendCommandPolicy` (`sections`, the default, =
@@ -37,7 +37,7 @@ Most command results that are still sent full are `grep -A/-B` context output an
 ```json
 {
   "name": "short-name",
-  "hypothesis": "one sentence on why this should help",
+  "hypothesis": "one sentence on why this will help",
   "config": { "presendNeedsFullAbove": 0.5, "presendFullMassAbove": 0.5, "presendMinConfidence": 0, "presendExpandAbove": 0.5, "presendMinTokens": 1200, "presendCommandNeedsFullAbove": 0.65, "presendCodePolicy": "gate", "presendCommandPolicy": "sections", "presendSectionExpandAbove": 0.5, "presendSectionFloor": 0.3 },
   "prompts": {
     "viewInstructions": "...", "viewDescriptions": { "signals": "...", "outline": "..." },
