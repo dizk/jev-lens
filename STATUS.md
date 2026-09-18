@@ -264,6 +264,10 @@ closed it at no cost. The "is this block what the task is about" phrasing for ex
 so the "will it need the body" phrasing stays. Nested signatures in the outline cut code ref-miss from 6.3 % to 4.7 %.
 New default: `JEV_MEMORY_PRESEND_CODE_POLICY=outline`, expansion threshold 0.5.
 
+Live on gpt-5.6-luna (marathon × 3): 3/3 passed, 0 recalls, cost 60.3k units per run against 56.1k for the round-4
+default and 72.9k for baseline. Neutral within run-to-run noise: the fixture's source files are small (10 of 13 large
+results compressed either way), so the policy cannot show there; the benchmark's code bucket is where it matters.
+
 ## Procedural graph prototype (`eval/action-graph.ts`)
 
 Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
