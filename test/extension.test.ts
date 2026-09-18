@@ -109,7 +109,7 @@ describe("extension wiring (mock classifier, rolling mode)", () => {
 		entries.push({
 			type: "custom",
 			customType: "jev-lens",
-			data: { kind: "decision", decision: { id: "c9", toolName: "read", bucket: "forget", durable: false, p: { needed: 0.1, outcomeOnly: 0, durable: 0 }, summary: "read old.txt", tokensBefore: 3000, decidedAt: 1, status: "applied", appliedAtCall: 2 } },
+			data: { kind: "decision", decision: { id: "c9", toolName: "read", bucket: "forget", p: { needed: 0.1, outcomeOnly: 0, durable: 0 }, summary: "read old.txt", tokensBefore: 3000, decidedAt: 1, status: "applied", appliedAtCall: 2 } },
 		});
 		const ctx = ctxFor(cwd, entries);
 		await emit("session_start", { reason: "resume" }, ctx);
@@ -209,7 +209,7 @@ describe("status line", () => {
 		const a = { ...assistant("done"), usage: { input: 1000, cacheRead: 0, output: 10 } } as any;
 		await emit("message_end", { message: a }, ctx);
 		const last = statuses.at(-1)!;
-		const m = /^jev-lens\(mock\) −(\d+)% of input \(presend −[\d.]+k · 1\/1 · 0 recalls, pruned −0\.0k · 0, 0 notes\)$/.exec(last);
+		const m = /^jev-lens\(mock\) −(\d+)% of input \(presend −[\d.]+k · 1\/1 · 0 recalls, pruned −0\.0k · 0\)$/.exec(last);
 		expect(m, last).not.toBeNull();
 		const saved = Math.round(code.length / 4) - Math.round(reduced.content[0].text.length / 4);
 		const expected = Math.round((100 * saved) / (1000 + saved));

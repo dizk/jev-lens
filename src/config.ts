@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type SealMode = "rolling" | "batch" | "budget";
+export type SealMode = "off" | "rolling" | "batch" | "budget";
 
 export interface Config {
 	/** Disable all pruning (classification still runs and logs). */
@@ -23,8 +23,6 @@ export interface Config {
 	/** P(needed) below this and P(outcomeOnly) above trimAbove → trim to head+tail. */
 	trimBelow: number;
 	trimAbove: number;
-	/** P(durable) above this → written to the memory file. */
-	durableAbove: number;
 	/** Tool results smaller than this (estimated tokens) are never touched. */
 	minTokens: number;
 	/** Maximum wait for in-flight classifications at context, agent end and shutdown. */
@@ -125,7 +123,7 @@ function num(name: string, fallback: number): number {
 export function loadConfig(): Config {
 	loadDotEnv();
 	const envMode = process.env.JEV_LENS_MODE;
-	const mode: SealMode = envMode === "batch" || envMode === "budget" || envMode === "rolling" ? envMode : "budget";
+	const mode: SealMode = envMode === "batch" || envMode === "budget" || envMode === "rolling" ? envMode : "off";
 	return {
 		enabled: process.env.JEV_LENS_DISABLED !== "1",
 		mode,
@@ -134,7 +132,6 @@ export function loadConfig(): Config {
 		forgetBelow: num("JEV_LENS_FORGET_BELOW", 0.25),
 		trimBelow: num("JEV_LENS_TRIM_BELOW", 0.5),
 		trimAbove: num("JEV_LENS_TRIM_ABOVE", 0.6),
-		durableAbove: num("JEV_LENS_DURABLE_ABOVE", 0.7),
 		minTokens: num("JEV_LENS_MIN_TOKENS", 150),
 		classifyWaitMs: num("JEV_LENS_CLASSIFY_WAIT_MS", 2500),
 		cacheTtlMs: num("JEV_LENS_CACHE_TTL_MS", 5 * 60 * 1000),

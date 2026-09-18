@@ -1,6 +1,6 @@
 {
   "name": "pi-jev-lens",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "pi extension that compresses large tool results before they reach the model: jev picks the view (outline, relevant blocks, sections, signals, testlog), full text stays recallable",
   "author": "Didrik Rognstad",
   "license": "MIT",

@@ -7,11 +7,10 @@ The agent gets a smaller result now and can use `recall` to retrieve omitted tex
 **Pre-send compression is the main cost lever.** Avoiding the first send saves uncached input tokens without rewriting
 an already-cached message. Pruning later can free context, but may cost more by invalidating part of the prompt cache.
 
-The extension has three complementary layers, all enabled by default:
-
-1. **Pre-send compression:** send outlines, relevant code blocks or filtered output instead of the entire result.
-2. **Cache-aware post-send pruning:** after the agent reacts, keep, trim or stub results when the pruning policy permits.
-3. **Durable notes:** retain selected project facts and preferences for future sessions.
+The extension does one thing by default: **pre-send compression**, sending outlines, relevant code blocks or filtered
+output instead of the entire result, with the full text one `recall` away. A second layer, **cache-aware post-send
+pruning** (keep, trim or stub results the agent has already acted on), is kept in the code but off by default:
+measured on real sessions it is not a cost win under prompt-cache pricing, see STATUS.md.
 
 ## Pre-send compression (the cost lever)
 
@@ -54,7 +53,9 @@ prompt) and served by a `recall` tool using an id, a line range or a pattern. Th
 not results that were only pruned post-send; those must be obtained by re-running the original tool. Every recall is
 logged as feedback on the reduced view. Set `JEV_LENS_PRESEND=0` to turn pre-send compression off.
 
-## Post-send pruning (the context-budget layer)
+## Post-send pruning (the context-budget layer, off by default)
+
+Enable with `JEV_LENS_MODE=budget` (or `rolling` / `batch`). Off, no post-send classification runs and no jev calls are made for it.
 
 This is a secondary pass, not the source of the initial pre-send savings. It classifies the result the agent saw
 (which may already be compressed) after the agent has reacted to it:
@@ -85,15 +86,6 @@ has been applied. Persisted decisions prevent repeated reclassification, but do 
 
 Tool results are never removed, only rewritten, because every `function_call` must keep a matching output.
 
-## Durable notes (cross-session memory)
-
-Separately from compression and pruning, jev assesses whether content is worth remembering across sessions.
-Selected notes are written to `<project>/.pi/jev-lens.md` as classifications complete and injected into the system
-prompt from a snapshot taken at the next session start. Agent end and session shutdown wait up to
-`JEV_LENS_CLASSIFY_WAIT_MS` for outstanding classifications. Requests still unfinished at shutdown are aborted and
-late responses discarded, so a slow request may not produce a note. This is not a fourth pruning bucket: saving a
-note does not remove its source from the prompt.
-
 ## Install
 
 ```sh
@@ -121,11 +113,11 @@ pi -e ./index.ts
 Inside pi: `/jev-lens` shows stats (and where the key comes from), `/jev-lens key` stores the key, `/jev-lens list` lists the latest 200 pre-send-compressed tool results with tokens
 before and after, `/jev-lens diff [n]` opens an overlay for the n-th latest one showing the original output with the
 lines the model did not get marked `−` (press `t` to switch to exactly what was sent, `Esc` to close),
-`/jev-lens decisions` lists post-send decisions with probabilities, `/jev-lens file` prints the memory file.
+`/jev-lens decisions` lists post-send decisions with probabilities (when post-send is on).
 In the transcript, a compressed `read`/`bash`/`grep`/`find`/`ls` result shows a header line
 `⌁ jev-lens outline · 179 of 1524 tokens (−88 %)` and, expanded (ctrl+e), the text the model saw. The footer shows
 session totals, leading with the share of the session's input tokens jev kept out of the prompt:
-`jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls, pruned −4.0k · 3, 2 notes)`. The share is
+`jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls)` (with post-send on, a `pruned` part follows). The share is
 cut / (sent + cut), where sent is the provider's own input plus cache-read counts over all calls and cut is what every
 compressed or pruned result saved on every call it was part of, so a result compressed early counts on each later call. Set `JEV_LENS_UI=0` to keep pi's own tool rendering. Every call is logged to
 `<project>/.pi/jev-lens.log` (JSON lines).
@@ -134,15 +126,14 @@ compressed or pruned result saved on every call it was part of, so a result comp
 
 | variable | default | meaning |
 |---|---|---|
-| `JEV_LENS_MODE` | `budget` | `rolling`, `batch` or `budget` (see above) |
+| `JEV_LENS_MODE` | `off` | post-send pruning: `off`, `rolling`, `batch` or `budget` (see above) |
 | `JEV_LENS_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` | `0.5` / `1000` | budget mode: apply when pending prunes remove at least this share of the tail they rewrite, and at least this many tokens |
 | `JEV_LENS_FORGET_BELOW` | `0.25` | P(needed) below this → forget |
 | `JEV_LENS_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
-| `JEV_LENS_DURABLE_ABOVE` | `0.7` | text notes require P(durable) above this; tool pointers require P(durable) above `max(this, 0.85)` |
 | `JEV_LENS_MIN_TOKENS` | `150` | smaller tool results are never touched |
 | `JEV_LENS_CLASSIFY_WAIT_MS` | `2500` | maximum wait for in-flight classification at context, agent end and shutdown |
 | `JEV_LENS_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
-| `JEV_LENS_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; classification, logging and memory notes remain active. Previously applied decisions are still replayed. |
+| `JEV_LENS_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; logging remains active. Previously applied decisions are still replayed. |
 | `JEV_LENS_PRESEND` | `1` | `0` turns pre-send compression off |
 | `JEV_LENS_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
 | `JEV_LENS_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
@@ -167,20 +158,19 @@ from the target project; existing nonempty environment values take precedence.
 
 ## How jev is used
 
-Post-send classification uses one request per eligible tool result, with three yes/no questions over the same state
-(`src/classifier.ts`): *needed*, *outcome only*, *durable*. The state holds the task (first and latest user message),
-the tool call and a head/tail excerpt of its output, and what the agent said and called next. User messages and assistant
-text between 40 and 6000 characters get a single *durable* question (disabled with the mock classifier). jev returns
-probabilities, not generated prose: stubs, trims and memory notes are assembled by code. Tool memory notes store only
-a call summary and success/failure marker; user and assistant notes are truncated excerpts. Notes are deduplicated,
-capped at 150 bullets / 8000 characters of bullet text, and loaded as a stable snapshot at session start.
+Pre-send selection is one request per large tool result: a Choice over the candidate views plus a yes/no question on
+whether the next step needs the exact full text (`src/presend.ts`). When a code outline or a `sections` view is chosen,
+a second request asks, per block or section, whether the agent will need its body. jev returns probabilities, not
+generated prose: every view is assembled by code from lines of the original output.
 
-Pre-send selection and optional block expansion use separate requests, in addition to post-send classification.
+With post-send pruning on, each eligible tool result gets one more request after the agent has reacted, with two
+yes/no questions (`src/classifier.ts`): *needed* and *outcome only*. The state holds the task, the tool call, a
+head/tail excerpt of its output, and what the agent said and called next.
 
 ## Evaluation
 
 ```sh
-npm test                                      # unit tests for the policy, ledger and memory file
+npm test                                      # unit tests for views, presend, policy and ledger
 node --import tsx eval/replay.ts <session.jsonl|dir>   # offline: classify a recorded session, simulate post-send pruning
 node --import tsx eval/presend-replay.ts <dir>          # offline: pre-send views vs what the agent did next (edit/quote misses)
 node --import tsx eval/action-graph.ts                  # procedural graph mined from runs, jev as guidance model

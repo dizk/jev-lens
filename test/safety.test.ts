@@ -34,6 +34,7 @@ function harness() {
 
 beforeEach(() => {
 	vi.stubEnv("JEV_LENS_CLASSIFIER", "mock");
+	vi.stubEnv("JEV_LENS_MODE", "rolling"); // post-send is off by default; these tests exercise it
 	vi.stubEnv("JEV_LENS_VARIANT", "");
 	vi.stubEnv("JEV_LENS_UI", "0");
 	vi.stubEnv("JEV_LENS_LOG", "0");
@@ -82,7 +83,7 @@ describe("conservative shell recognition", () => {
 	});
 });
 
-describe("asynchronous session isolation and durable flush", () => {
+describe("asynchronous session isolation", () => {
 	it("discards old responses without deleting new in-flight work with the same id", async () => {
 		const old = deferred<any>(), fresh = deferred<any>();
 		vi.spyOn(MockClassifier.prototype, "classifyToolResult").mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
@@ -95,7 +96,6 @@ describe("asynchronous session isolation and durable flush", () => {
 		old.resolve({ needed: 0, outcomeOnly: 0, durable: 1 });
 		await new Promise((r) => setTimeout(r, 0));
 		expect(h.entries).toHaveLength(0);
-		expect(existsSync(join(h.ctx.cwd, ".pi/jev-lens.md"))).toBe(false);
 		const finish = h.emit("agent_end");
 		fresh.resolve({ needed: 1, outcomeOnly: 0, durable: 0 });
 		await finish;
@@ -114,48 +114,6 @@ describe("asynchronous session isolation and durable flush", () => {
 		expect(await work).toBeUndefined();
 		const recall = await h.tools.get("recall").execute("r", { id: "old" });
 		expect(recall.content[0].text).toContain("No stored output");
-	});
-	it("discards text notes from an earlier session", async () => {
-		vi.stubEnv("JEV_LENS_CLASSIFIER", "real"); vi.stubEnv("TYPESAFE_API_KEY", "test-key");
-		const d = deferred<number>();
-		vi.spyOn(JevClassifier.prototype, "classifyText").mockReturnValue(d.promise);
-		const h = harness(); await h.emit("session_start");
-		await h.emit("message_end", { message: { role: "user", content: [{ type: "text", text: "Remember this preference only for the original project, not another one." }] } });
-		const next = { ...h.ctx, cwd: temp() };
-		await h.emit("session_start", {}, next);
-		d.resolve(0.99); await new Promise((r) => setTimeout(r, 0));
-		await h.emit("session_shutdown", {}, next);
-		expect(existsSync(join(next.cwd, ".pi/jev-lens.md"))).toBe(false);
-	});
-	it("flushes notes arriving after the agent-end wait expires", async () => {
-		const d = deferred<any>();
-		vi.spyOn(MockClassifier.prototype, "classifyToolResult").mockReturnValue(d.promise);
-		const h = harness(); await h.emit("session_start");
-		await h.emit("turn_end", { toolResults: [result()] });
-		await h.emit("agent_end");
-		d.resolve({ needed: 1, outcomeOnly: 0, durable: 1 });
-		await new Promise((r) => setTimeout(r, 0));
-		expect(readFileSync(join(h.ctx.cwd, ".pi/jev-lens.md"), "utf8")).toContain("succeeded");
-	});
-	it("waits for final tool notes at agent end", async () => {
-		const d = deferred<any>();
-		vi.spyOn(MockClassifier.prototype, "classifyToolResult").mockReturnValue(d.promise);
-		const h = harness(); await h.emit("session_start");
-		await h.emit("turn_end", { toolResults: [result()] });
-		const finish = h.emit("agent_end");
-		d.resolve({ needed: 1, outcomeOnly: 0, durable: 1 });
-		await finish;
-		expect(readFileSync(join(h.ctx.cwd, ".pi/jev-lens.md"), "utf8")).toContain("succeeded");
-	});
-	it("tracks text requests and flushes them before shutdown", async () => {
-		vi.stubEnv("JEV_LENS_CLASSIFIER", "real"); vi.stubEnv("TYPESAFE_API_KEY", "test-key");
-		const d = deferred<number>();
-		vi.spyOn(JevClassifier.prototype, "classifyText").mockReturnValue(d.promise);
-		const h = harness(); await h.emit("session_start");
-		await h.emit("message_end", { message: { role: "user", content: [{ type: "text", text: "Always preserve exact whitespace in code blocks in this project." }] } });
-		const finish = h.emit("session_shutdown");
-		d.resolve(0.99); await finish;
-		expect(readFileSync(join(h.ctx.cwd, ".pi/jev-lens.md"), "utf8")).toContain("Always preserve");
 	});
 	it("bounds shutdown and ignores responses after its deadline", async () => {
 		const d = deferred<any>(); let signal: AbortSignal | undefined;

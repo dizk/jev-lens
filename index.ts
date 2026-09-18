@@ -1,17 +1,13 @@
 /**
- * pi-jev-lens: cache-aware memory routing for pi.
+ * pi-jev-lens: jev picks what the model gets to see of large tool results.
  *
- * Every tool result is classified once by jev (TypeSafe System One) after the agent has
- * seen it and acted on it. The decision (keep / trim / forget, plus durable yes/no) is
- * persisted and, once applied to an outgoing prompt, never changes again, so the prompt
- * prefix stays byte-identical across calls and the provider cache keeps hitting.
+ * Pre-send: before a large tool result is stored or sent, code builds candidate views (strict
+ * subsets of the output with line numbers), jev (TypeSafe System One) chooses one and, for code
+ * and sectioned command output, which blocks to put back. The full text stays in the result's
+ * details and the `recall` tool serves it on request.
  *
- * Buckets:
- *   context (keep)  – sent verbatim
- *   trim            – head + tail only
- *   forget          – replaced by a one-line stub (tool results are never removed:
- *                     every function_call needs a matching output)
- *   file (durable)  – appended to <project>/.pi/jev-lens.md, loaded at session start
+ * Post-send (off by default, JEV_LENS_MODE=rolling|batch|budget): tool results the agent has
+ * already acted on are classified once and trimmed or stubbed behind a frozen, cache-aware ledger.
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -28,10 +24,9 @@ import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, J
 import { buildCandidatesAsync, extractTerms, footer } from "./src/views.ts";
 import { keyFilePath, loadConfigWithVariant, storeKey, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
-import { appendNotes, memoryPromptSection, readMemoryFile } from "./src/memory-file.ts";
 import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "./src/policy.ts";
 import { contentText, describeToolCall, estimateTokensOfText, toolCallsOf, truncate } from "./src/text.ts";
-import type { CallStats, Decision, DurableNote } from "./src/types.ts";
+import type { CallStats, Decision } from "./src/types.ts";
 
 interface PendingResult {
 	message: AgentMessage & { role: "toolResult" };
@@ -64,7 +59,6 @@ export default function (pi: ExtensionAPI) {
 	let ledger = new Map<string, Decision>();
 	/** Classifications launched but not yet resolved, keyed by toolCallId. */
 	const inflight = new Map<string, Promise<void>>();
-	const textInflight = new Set<Promise<void>>();
 	let generation = 0;
 	let sessionAbort = new AbortController();
 	const workSignal = (signal?: AbortSignal) => signal ? AbortSignal.any([signal, sessionAbort.signal]) : sessionAbort.signal;
@@ -81,13 +75,10 @@ export default function (pi: ExtensionAPI) {
 	const argsById = new Map<string, unknown>();
 	let callIndex = 0;
 	let lastCallAt = 0;
-	let memorySnapshot = "";
-	let memoryPath = "";
 	let logPath = "";
-	let totals = { pruned: 0, applied: 0, notes: 0, calls: 0, cacheRead: 0, input: 0 };
+	let totals = { pruned: 0, applied: 0, calls: 0, cacheRead: 0, input: 0 };
 	/** Tokens kept out of the prompt, summed over every LLM call of the session (a compressed result saves on each later call too). */
 	let cut = { presend: 0, pruned: 0 };
-	let durableQueue: DurableNote[] = [];
 	let firstUser = "";
 	let latestUser = "";
 
@@ -108,7 +99,8 @@ export default function (pi: ExtensionAPI) {
 		const tag = usingMock ? "jev-lens(mock)" : "jev-lens";
 		const pct = cutShare();
 		const lead = pct === undefined ? tag : `${tag} −${pct}% of input`;
-		return `${lead} (presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k · ${presendTotals.compressed}/${presendTotals.considered} · ${presendTotals.recalls} recalls, pruned −${(totals.pruned / 1000).toFixed(1)}k · ${totals.applied}, ${totals.notes} notes)`;
+		const pruned = cfg.mode === "off" ? "" : `, pruned −${(totals.pruned / 1000).toFixed(1)}k · ${totals.applied}`;
+		return `${lead} (presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k · ${presendTotals.compressed}/${presendTotals.considered} · ${presendTotals.recalls} recalls${pruned})`;
 	};
 	const status = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
@@ -123,8 +115,6 @@ export default function (pi: ExtensionAPI) {
 		generation++;
 		sessionAbort.abort();
 		sessionAbort = new AbortController();
-		textInflight.clear();
-		durableQueue = [];
 		lastAssistantText = "";
 		ledger = rebuildLedger(ctx.sessionManager.getEntries());
 		buffer = [];
@@ -132,7 +122,7 @@ export default function (pi: ExtensionAPI) {
 		argsById.clear();
 		callIndex = 0;
 		lastCallAt = 0;
-		totals = { pruned: 0, applied: 0, notes: 0, calls: 0, cacheRead: 0, input: 0 };
+		totals = { pruned: 0, applied: 0, calls: 0, cacheRead: 0, input: 0 };
 		cut = { presend: 0, pruned: 0 };
 		firstUser = "";
 		latestUser = "";
@@ -140,8 +130,6 @@ export default function (pi: ExtensionAPI) {
 		records.length = 0;
 		recordById.clear();
 		presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
-		memoryPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-lens.md");
-		memorySnapshot = readMemoryFile(memoryPath);
 		try {
 			mkdirSync(join(ctx.cwd, CONFIG_DIR_NAME), { recursive: true });
 			logPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-lens.log");
@@ -170,25 +158,17 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		const epoch = generation;
-		await waitForWork([...inflight.values(), ...textInflight]);
+		await waitForWork([...inflight.values()]);
 		if (epoch !== generation) return;
-		flushDurable();
-		if (inflight.size || textInflight.size) log({ event: "shutdown_timeout", pending: inflight.size + textInflight.size });
+		if (inflight.size) log({ event: "shutdown_timeout", pending: inflight.size });
 		generation++;
 		sessionAbort.abort();
 		inflight.clear();
-		textInflight.clear();
-		durableQueue = [];
 	});
-
-	// ---- memory file → system prompt (snapshot taken at session start, stable within the session)
 
 	pi.on("before_agent_start", async (event) => {
 		if (!firstUser) firstUser = event.prompt;
 		latestUser = event.prompt;
-		const section = memoryPromptSection(memorySnapshot);
-		if (!section) return;
-		return { systemPrompt: event.systemPrompt + section };
 	});
 
 	// ---- classification ------------------------------------------------------------------
@@ -199,7 +179,6 @@ export default function (pi: ExtensionAPI) {
 			const text = contentText(m.content);
 			if (!firstUser) firstUser = text;
 			latestUser = text;
-			queueText("user", text, ctx);
 			return;
 		}
 		if (m.role === "toolResult") {
@@ -214,7 +193,6 @@ export default function (pi: ExtensionAPI) {
 		const toClassify = buffer;
 		buffer = [];
 		for (const item of toClassify) launchClassification(item, afterText, afterCalls, ctx);
-		if (afterText.trim()) queueText("agent", afterText, ctx);
 	});
 
 	pi.on("tool_execution_end", async (event) => {
@@ -234,13 +212,13 @@ export default function (pi: ExtensionAPI) {
 		const toClassify = buffer;
 		buffer = [];
 		for (const item of toClassify) launchClassification(item, "", [], undefined);
-		await waitForWork([...inflight.values(), ...textInflight]);
-		if (epoch === generation) flushDurable();
+		await waitForWork([...inflight.values()]);
+		void epoch;
 	});
 
 	function launchClassification(item: PendingResult, afterText: string, afterCalls: { name: string; arguments: unknown }[], ctx?: ExtensionContext) {
 		const m = item.message;
-		if (sessionAbort.signal.aborted || m.content.some((c) => c.type !== "text")) return;
+		if (cfg.mode === "off" || sessionAbort.signal.aborted || m.content.some((c) => c.type !== "text")) return;
 		const epoch = generation;
 		if (ledger.has(m.toolCallId) || inflight.has(m.toolCallId)) return;
 		const output = contentText(m.content);
@@ -267,7 +245,6 @@ export default function (pi: ExtensionAPI) {
 					id: m.toolCallId,
 					toolName: m.toolName,
 					bucket: cfg.enabled ? decideBucket(probs, cfg) : "keep",
-					durable: probs.durable > cfg.durableAbove,
 					p: probs,
 					summary,
 					tokensBefore: tokens,
@@ -277,48 +254,12 @@ export default function (pi: ExtensionAPI) {
 				ledger.set(decision.id, decision);
 				persist(decision);
 				log({ event: "decision", id: decision.id, tool: m.toolName, bucket: decision.bucket, p: probs, tokens, ms: Date.now() - started, summary });
-				// Tool output is rarely a durable fact by itself; only keep a pointer, and only when jev is very sure.
-				if (probs.durable > Math.max(cfg.durableAbove, 0.85)) {
-					durableQueue.push({ source: "tool", text: `${summary}${m.isError ? " failed" : " succeeded"}`, p: probs.durable, at: Date.now() });
-					flushDurable();
-				}
 			})
 			.catch((err) => {
 				if (epoch === generation) log({ event: "classify_error", id: m.toolCallId, error: String(err?.message ?? err) });
 			})
 			.finally(() => { if (epoch === generation) inflight.delete(m.toolCallId); });
 		inflight.set(m.toolCallId, p);
-	}
-
-	function queueText(role: "user" | "agent", text: string, ctx?: ExtensionContext) {
-		if (sessionAbort.signal.aborted || usingMock || text.length < 40 || text.length > 6000) return;
-		const epoch = generation;
-		const work = classifier
-			.classifyText({ task: { first_user_request: truncate(firstUser, 600) }, message: truncate(text, 3000), role }, workSignal(ctx?.signal))
-			.then((p) => {
-				if (epoch !== generation) return;
-				log({ event: "text", role, p, chars: text.length });
-				if (p > cfg.durableAbove) {
-					durableQueue.push({ source: role, text: truncate(text, 400), p, at: Date.now() });
-					flushDurable();
-				}
-			})
-			.catch((err) => { if (epoch === generation) log({ event: "classify_error", role, error: String(err?.message ?? err) }); })
-			.finally(() => { if (epoch === generation) textInflight.delete(work); });
-		textInflight.add(work);
-	}
-
-	function flushDurable() {
-		if (durableQueue.length === 0 || !memoryPath) return;
-		const notes = durableQueue;
-		durableQueue = [];
-		try {
-			const added = appendNotes(memoryPath, notes);
-			totals.notes += added;
-			log({ event: "memory_file", added, path: memoryPath });
-		} catch (err) {
-			log({ event: "memory_file_error", error: String((err as Error)?.message ?? err) });
-		}
 	}
 
 	// ---- the cache-aware cut: right before each LLM call --------------------------------
@@ -392,7 +333,6 @@ export default function (pi: ExtensionAPI) {
 				persist(d);
 			}
 		}
-		flushDurable();
 	});
 
 	// ---- pre-send compression: pick a view of a large tool result before it is ever sent ----
@@ -535,7 +475,7 @@ export default function (pi: ExtensionAPI) {
 	// ---- commands ----------------------------------------------------------------------
 
 	pi.registerCommand("jev-lens", {
-		description: "jev-lens: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | file | key [api-key] (store your TypeSafe key)",
+		description: "jev-lens: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | key [api-key] (store your TypeSafe key)",
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
 			if (sub === "key" || sub.startsWith("key ")) {
@@ -546,11 +486,6 @@ export default function (pi: ExtensionAPI) {
 				useKey(key);
 				ctx.ui.notify(`jev-lens: key stored in ${where}; jev is active from the next tool result`, "info");
 				status(ctx);
-				return;
-			}
-			if (sub === "file") {
-				const text = readMemoryFile(memoryPath) || "(memory file is empty)";
-				ctx.ui.notify(text, "info");
 				return;
 			}
 			if (sub.startsWith("diff")) {
@@ -570,7 +505,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (sub === "decisions") {
-				const rows = [...ledger.values()].map((d) => `${d.status === "applied" ? "●" : "○"} ${d.bucket.padEnd(6)} n=${d.p.needed.toFixed(2)} o=${d.p.outcomeOnly.toFixed(2)} d=${d.p.durable.toFixed(2)} ${d.tokensBefore}t ${d.summary}`);
+				const rows = [...ledger.values()].map((d) => `${d.status === "applied" ? "●" : "○"} ${d.bucket.padEnd(6)} n=${d.p.needed.toFixed(2)} o=${d.p.outcomeOnly.toFixed(2)} ${d.tokensBefore}t ${d.summary}`);
 				ctx.ui.notify(rows.join("\n") || "(no decisions yet)", "info");
 				return;
 			}
@@ -582,7 +517,6 @@ export default function (pi: ExtensionAPI) {
 					`post-send: calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
 					`cache: read=${totals.cacheRead} uncached=${totals.input} hit=${hit}%`,
 					`input cut: ${cutShare() ?? 0}% of the session's input tokens (≈${cut.presend + cut.pruned} of ${totals.input + totals.cacheRead + cut.presend + cut.pruned}: presend ${cut.presend}, pruned ${cut.pruned}, summed over ${totals.calls} calls)`,
-					`memory file: ${memoryPath} (+${totals.notes} notes this session)`,
 				].join("\n"),
 				"info",
 			);

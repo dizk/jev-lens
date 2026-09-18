@@ -87,7 +87,6 @@ export interface SessionReport {
 	toolResults: number;
 	classified: number;
 	buckets: Record<"keep" | "trim" | "forget", number>;
-	durable: number;
 	baseline: { input: number; cached: number; uncached: number; costUnits: number; finalContext: number };
 	pruned: { input: number; cached: number; uncached: number; costUnits: number; finalContext: number };
 	rereadAfterForget: number;
@@ -103,7 +102,7 @@ export async function replaySession(file: string, classifier: Classifier, mode: 
 	const ledger = new Map<string, Decision>();
 	const argsById = new Map<string, unknown>();
 	const report: SessionReport = {
-		file, calls: 0, toolResults: 0, classified: 0, buckets: { keep: 0, trim: 0, forget: 0 }, durable: 0,
+		file, calls: 0, toolResults: 0, classified: 0, buckets: { keep: 0, trim: 0, forget: 0 },
 		baseline: { input: 0, cached: 0, uncached: 0, costUnits: 0, finalContext: 0 },
 		pruned: { input: 0, cached: 0, uncached: 0, costUnits: 0, finalContext: 0 },
 		rereadAfterForget: 0, rereadBaseline: 0, jevMs: [], decisions: [],
@@ -188,7 +187,7 @@ export async function replaySession(file: string, classifier: Classifier, mode: 
 			report.jevMs.push(Date.now() - t0);
 			const summary = describeToolCall(r.toolName, args, output.length, output.split("\n").length);
 			const d: Decision & { path?: string } = {
-				id: r.toolCallId, toolName: r.toolName, bucket: decideBucket(p, cfg), durable: p.durable > cfg.durableAbove, p, summary,
+				id: r.toolCallId, toolName: r.toolName, bucket: decideBucket(p, cfg), p, summary,
 				tokensBefore: tokens, decidedAt: Date.now(), status: "pending",
 			};
 			const a = (args ?? {}) as { path?: unknown };
@@ -196,7 +195,6 @@ export async function replaySession(file: string, classifier: Classifier, mode: 
 			ledger.set(d.id, d);
 			report.classified++;
 			report.buckets[d.bucket]++;
-			if (d.durable) report.durable++;
 			report.decisions.push({ tool: r.toolName, summary, bucket: d.bucket, p, tokens });
 		}));
 	}

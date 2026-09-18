@@ -3,7 +3,6 @@ export type Bucket = "keep" | "trim" | "forget";
 export interface Probabilities {
 	needed: number;
 	outcomeOnly: number;
-	durable: number;
 }
 
 export interface Decision {
@@ -11,7 +10,6 @@ export interface Decision {
 	id: string;
 	toolName: string;
 	bucket: Bucket;
-	durable: boolean;
 	p: Probabilities;
 	/** One-line description used in the stub, fixed at decision time so the stub never changes. */
 	summary: string;
@@ -22,13 +20,6 @@ export interface Decision {
 	appliedAtCall?: number;
 	/** Why the decision was applied (rolling, cold-cache, compaction, forced). */
 	appliedReason?: string;
-}
-
-export interface DurableNote {
-	source: "user" | "agent" | "tool";
-	text: string;
-	p: number;
-	at: number;
 }
 
 export interface CallStats {

@@ -38,6 +38,6 @@ describe("MockClassifier", () => {
 		const c = new MockClassifier();
 		const s = buildItemState({ stateHeadChars: 10, stateTailChars: 10 }, { firstUser: "", latestUser: "", toolName: "bash", args: {}, isError: false, output: "y".repeat(3000), afterText: "", afterCalls: [] });
 		expect(await c.classifyToolResult(s)).toEqual(defaultMockRule(s));
-		expect(defaultMockRule(s)).toEqual({ needed: 0.1, outcomeOnly: 0.9, durable: 0 });
+		expect(defaultMockRule(s)).toEqual({ needed: 0.1, outcomeOnly: 0.9 });
 	});
 });

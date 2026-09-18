@@ -28,7 +28,6 @@ export interface TextState {
 
 export interface Classifier {
 	classifyToolResult(state: ItemState, signal?: AbortSignal): Promise<Probabilities>;
-	classifyText(state: TextState, signal?: AbortSignal): Promise<number>;
 }
 
 export function buildItemState(
@@ -83,36 +82,6 @@ export const TOOL_RESULT_QUESTIONS = {
 			false: "Source code, file contents, search results, directory listings, or any output where specific lines in the middle carry the information.",
 		},
 	},
-	durable: {
-		type: "noul" as const,
-		instructions:
-			"Does `item` reveal a stable fact about this project (its structure, conventions, how to build, test or run it, a known pitfall) or about the user's preferences, that would still be true and useful in a future, unrelated session?",
-		criteria: {
-			true: "Build or test commands that work, project layout, conventions, configuration quirks, recurring gotchas.",
-			false: "Task-specific content, transient state, one-off command output, file contents that change with every edit.",
-		},
-	},
-};
-
-export const TEXT_QUESTIONS = {
-	durable_user: {
-		type: "noul" as const,
-		instructions:
-			"`message` was written by the user to a coding agent. Does it state a preference, standing instruction, or fact about the user or the project that should be remembered in future sessions, rather than a one-off task instruction?",
-		criteria: {
-			true: "Coding style preferences, tools or workflows the user wants used, facts about the project's purpose, constraints that will keep applying.",
-			false: "A task for right now, a question, feedback about one specific change, small talk.",
-		},
-	},
-	durable_agent: {
-		type: "noul" as const,
-		instructions:
-			"`message` was written by a coding agent. Does it state a conclusion, decision, or discovered fact about the project that will remain true and be useful in future unrelated sessions?",
-		criteria: {
-			true: "How the project is structured, where things live, what command runs the tests, a root cause that explains recurring behaviour, a design decision that was made.",
-			false: "Progress narration, a plan for the current task, a question to the user, a summary of edits just made.",
-		},
-	},
 };
 
 export class JevClassifier implements Classifier {
@@ -124,12 +93,7 @@ export class JevClassifier implements Classifier {
 	}
 	async classifyToolResult(state: ItemState, signal?: AbortSignal): Promise<Probabilities> {
 		const r = await this.client.systemOne({ state: state as never, questions: TOOL_RESULT_QUESTIONS, model: this.model }, { signal, timeout: 15000 });
-		return { needed: r.answers.needed.noul, outcomeOnly: r.answers.outcome_only.noul, durable: r.answers.durable.noul };
-	}
-	async classifyText(state: TextState, signal?: AbortSignal): Promise<number> {
-		const q = state.role === "user" ? { durable: TEXT_QUESTIONS.durable_user } : { durable: TEXT_QUESTIONS.durable_agent };
-		const r = await this.client.systemOne({ state: { task: state.task, message: state.message }, questions: q, model: this.model }, { signal, timeout: 15000 });
-		return r.answers.durable.noul;
+		return { needed: r.answers.needed.noul, outcomeOnly: r.answers.outcome_only.noul };
 	}
 }
 
@@ -139,13 +103,10 @@ export class MockClassifier implements Classifier {
 	async classifyToolResult(state: ItemState): Promise<Probabilities> {
 		return this.rule(state);
 	}
-	async classifyText(): Promise<number> {
-		return 0;
-	}
 }
 
 export function defaultMockRule(state: ItemState): Probabilities {
 	const big = state.item.total_chars > 2000;
 	const cmd = state.item.tool === "bash";
-	return { needed: big ? 0.1 : 0.9, outcomeOnly: cmd ? 0.9 : 0.1, durable: 0 };
+	return { needed: big ? 0.1 : 0.9, outcomeOnly: cmd ? 0.9 : 0.1 };
 }

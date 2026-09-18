@@ -383,6 +383,10 @@ The excluded edit results also shrink the editable count from 46 to 26, which is
 
 **Lesson for the research loop.** Every conclusion about code views drawn from the 100-trajectory holdout was drawn from 13 to 15 editable results, and the one that mattered was wrong. Editable results are the scarce evidence; the large slice has 26 after excluding edit echoes, the reserve 800-1299 should have a similar number, and autoresearch should be scored on the large slice for any variant that touches code, even at 20 minutes per evaluation.
 
+## 0.2.0: pre-send only (2026-09-19)
+
+Published as `pi-jev-lens` on npm (the name `pi-jev-context` belongs to an unrelated post-send pruning extension). With the release the extension was cut down to the one layer with evidence behind it: durable notes are removed (never measured, one jev call per user and assistant message, and a surprising thing for a compressor to do), and post-send pruning is off by default (`JEV_LENS_MODE=off`), kept in the code for long sessions where the context budget might matter. Everything above about post-send and notes stays as the record of why.
+
 ## What to try next
 
 1. **Pre-send judgment**: built, see above. Next: let the autoresearch researcher write view builders (one per content kind, sandboxed, verified as strict line subsets) instead of only prompt text and thresholds; three rounds of the latter transferred nothing, every code-built view did. And a structural rule for the second step: expand blocks referenced by an expanded block or named in the task.

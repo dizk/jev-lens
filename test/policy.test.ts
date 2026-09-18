@@ -14,7 +14,7 @@ function user(text: string): AgentMessage {
 	return { role: "user", content: [{ type: "text", text }], timestamp: 1 } as AgentMessage;
 }
 function decision(id: string, bucket: Decision["bucket"], status: Decision["status"] = "pending"): Decision {
-	return { id, toolName: "read", bucket, durable: false, p: { needed: 0.1, outcomeOnly: 0.1, durable: 0 }, summary: `read ${id}`, tokensBefore: 100, decidedAt: 1, status };
+	return { id, toolName: "read", bucket, p: { needed: 0.1, outcomeOnly: 0.1 }, summary: `read ${id}`, tokensBefore: 100, decidedAt: 1, status };
 }
 
 describe("decideBucket", () => {
