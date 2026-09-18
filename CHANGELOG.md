@@ -2,19 +2,19 @@
 
 ## 0.2.0 (2026-09-19)
 
-Pre-send only.
+jev-lens now does one thing: compression before the first send.
 
-- Removed durable notes (`.pi/jev-lens.md`, system-prompt injection, per-message text classification): never measured, one jev call per message, and a surprise for users who installed a compressor. The idea stays in docs/ideas.md.
-- Post-send pruning is off by default (`JEV_LENS_MODE=off`); enable with `budget`, `rolling` or `batch`. The post-send classifier now asks two questions (*needed*, *outcome only*).
-- Status line: `jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls)`; the `pruned` part appears only with post-send on.
+- Removed the durable notes: the file `.pi/jev-lens.md`, the text that was added to the system prompt, and the jev call for every message. We never measured their value, and a compressor that writes notes about your conversation is a surprise. The idea stays in docs/ideas.md.
+- Post-send pruning is off by default. `JEV_LENS_MODE` is `off`. Set it to `budget`, `rolling` or `batch` to turn it on. The post-send classifier now asks two questions: needed, and outcome only.
+- The status line reads `jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls)`. The `pruned` part is only shown when post-send pruning is on.
 - Removed `/jev-lens file` and `JEV_LENS_DURABLE_ABOVE`.
 
 ## 0.1.0 (2026-09-19)
 
 First public release.
 
-- Pre-send compression of large tool results: code-built views (`outline`, `relevant`, `focus`, `signals`, `testlog`, `tree`, `matches`, `log`, `sample`, `sections`, `head_tail`), jev chooses, a second jev step expands the blocks or sections the agent needs, full text stays recallable with the `recall` tool.
-- Bash file displays (`cat`, `sed -n`, `head`) are typed as code or prose; the agent's own `edit`/`write` results are never reduced.
-- `/jev-lens key` stores the TypeSafe API key in `~/.pi/agent/jev-lens.json` (user-only); `TYPESAFE_API_KEY` in the environment takes precedence.
-- Cache-aware post-send pruning ledger (`budget` mode by default) and durable notes in `.pi/jev-lens.md`.
-- Benchmark on real OpenHands trajectories (`eval/bench/`) and an autoresearch loop; findings in STATUS.md.
+- Compression of large tool results before the first send. Code builds the views (`outline`, `relevant`, `focus`, `signals`, `testlog`, `tree`, `matches`, `log`, `sample`, `sections`, `head_tail`). jev chooses one. A second jev step puts back the blocks or sections that the agent needs. The full text stays available through the `recall` tool.
+- Files that the agent reads with `cat`, `sed -n` or `head` count as code or prose. The results of the agent's own `edit` and `write` tools are never reduced.
+- `/jev-lens key` stores the TypeSafe API key in `~/.pi/agent/jev-lens.json`, readable only by the user. `TYPESAFE_API_KEY` in the environment takes precedence.
+- A cache-aware post-send pruning ledger (`budget` mode by default) and durable notes in `.pi/jev-lens.md`.
+- A benchmark on real OpenHands trajectories (`eval/bench/`) and an autoresearch loop. The findings are in STATUS.md.

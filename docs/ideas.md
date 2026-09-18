@@ -1,46 +1,78 @@
-# Ideas: where this memory system can go
+# Ideas: where jev-lens can go
 
-Written 2026-09-18 after the first round of evals. Each idea says what jev decides, what code does, and how it would be measured. Order is my recommendation.
+Written on 2026-09-18 after the first round of evaluations, and updated for 0.2.0. Each idea says what jev decides,
+what code does, and how we would measure it. The order is our recommendation.
 
-## 1. Pre-send compression is the cost lever (built, see STATUS.md)
+## 1. Compression before the first send is the cost lever (built, see STATUS.md)
 
-Everything sent verbatim is cached at 10 % for the rest of the session; everything not sent is free forever. So the decision that matters is made once, before first send: *which view of this output does the agent need right now?* Code builds candidate views that are strict subsets of the original (outline, focus, signals, sample, head/tail); jev picks; a second jev step expands the code blocks the agent will need; a `recall` tool is the safety net, and every recall is a logged signal that the choice was too aggressive.
+Everything that is sent in full is cached at 10 % of the price for the rest of the session. Everything that is not
+sent is free forever. So the decision that matters is made once, before the first send: which view of this output
+does the agent need right now? Code builds candidate views that are subsets of the original (outline, focus, signals,
+sample, head and tail, sections). jev picks one. A second jev step puts back the code blocks or sections that the
+agent will need. The `recall` tool is the safety net, and every recall is a logged signal that the choice was too
+aggressive.
 
-Next steps here: views for `grep`/`find` output (group by file, collapse repeated matches), for diffs (hunk headers only), and for `bash` build logs (last failing target). Learn per-tool thresholds from recall rates.
+Next steps: views for diffs (hunk headers only) and for build logs (the last failing target), and thresholds per tool
+that are learned from recall rates.
 
 ## 2. Procedural graphs with jev as the guidance model (prototype in `eval/action-graph.ts`)
 
-The paper (Lu et al., *Procedural Graphs: Self-Evolving Execution Structures for LLM Agents*) keeps procedural knowledge as a graph of (procedure, relation, procedure) triples, localizes the agent in it at each step, and has a guidance model translate the surrounding subgraph into advice that biases, but does not dictate, the solver's next action. The graph evolves from successful and failed trajectories.
+The paper by Lu et al., *Procedural Graphs: Self-Evolving Execution Structures for LLM Agents*, keeps procedural
+knowledge as a graph of (procedure, relation, procedure) triples. At each step, it finds where the agent is in the
+graph, and a guidance model turns the nearby part of the graph into advice. The advice biases the next action but
+does not dictate it. The graph grows from successful and failed trajectories.
 
-jev is a natural guidance model because every step of that loop is a typed judgment over state the code can assemble:
+jev fits the role of the guidance model, because every step of that loop is a typed judgment over state that code
+can assemble:
 
 | step | what code provides | what jev answers |
 |---|---|---|
-| localize | recent actions, current node candidates | Choice: which node is the agent at? |
-| guide | outgoing edges with counts and success rates, the task, the agent's last message | Choice over next procedures, plus Nouls: "is the agent looping?", "has it skipped verification?" |
-| gate | the proposed next action vs the graph | Noul: does this action leave the known-good path? (only then inject guidance) |
-| refine | a failed trajectory vs the nearest successful one | Noul per edge: was this transition where it went wrong? |
+| localize | the recent actions and the candidate nodes | a choice: which node is the agent at? |
+| guide | the outgoing edges with counts and success rates, the task, the agent's last message | a choice over the next procedures, plus yes or no questions: is the agent looping? did it skip verification? |
+| gate | the proposed next action against the graph | yes or no: does this action leave the known good path? Only then inject guidance |
+| refine | a failed trajectory against the nearest successful one | yes or no per edge: was this transition where it went wrong? |
 
-Mining is code: sessions are JSONL, tool calls are the actions, hidden tests give the outcome. The prototype mines (tool, target class) nodes from 34 runs and asks jev, at 158 decision points of the 6 held-out marathon runs, what should come next. See the numbers in `eval/runs/action-graph.md`. The interesting use is not prediction accuracy but *deviation detection*: the graph knows that after `edit:src` comes `bash:test` in 96 % of passing runs; an agent that goes `edit:src → final_answer` is off the path, and a one-line nudge ("run the tests before finishing") injected as a custom message costs nothing when the agent is on the path.
+Mining is code. Sessions are JSONL files, tool calls are the actions, and hidden tests give the outcome. The prototype
+mines (tool, target class) nodes from 34 runs. At 158 decision points of 6 held-out marathon runs, it asks jev what
+must come next. The numbers are in `eval/runs/action-graph.md`. The useful application is not prediction accuracy but
+deviation detection. The graph knows that after `edit:src` comes `bash:test` in 96 % of the passing runs. An agent
+that goes from `edit:src` to `final_answer` is off the path. A nudge of one line ("run the tests before finishing"),
+injected as a custom message, costs nothing when the agent is on the path.
 
-Where it plugs in: `before_agent_start` / `turn_end` in this extension; the graph lives in `.pi/jev-lens-graph.json` and is refined from `results.jsonl`-style outcomes or from the user's own thumbs-up/down.
+Where it plugs in: the `before_agent_start` and `turn_end` hooks of this extension. The graph lives in
+`.pi/jev-lens-graph.json` and is refined from outcomes in the style of `results.jsonl`, or from the user's own thumbs
+up and down.
 
-## 3. Episodic memory index instead of a flat memory file
+## 3. An episodic memory index
 
-The current memory file is a list of durable sentences. A better long-term store is an index of *episodes*: for each past session, a pointer (session file, task summary line, files touched, outcome) plus the durable notes. At session start jev answers, per episode, "is this episode relevant to the new task?" (Noul, batched over the last N episodes in one request) and only the relevant ones are injected. Code keeps the index; jev ranks. This is the "find and judge evidence" pattern and needs no embeddings.
+Version 0.1.0 had a memory file: a list of durable sentences that jev selected from each session. We removed it in
+0.2.0 because we never measured its value. A better long-term store is an index of episodes. For each past session
+it holds a pointer (the session file, one line that summarizes the task, the files that were touched, the outcome)
+plus the durable notes. At session start, jev answers for each episode: is this episode relevant to the new task? One
+request covers the last N episodes. Only the relevant episodes go into the prompt. Code keeps the index, and jev
+ranks. This is the "find and judge evidence" pattern, and it needs no embeddings.
 
 ## 4. Context repair instead of compaction
 
-pi's compaction summarizes with the main model when the window fills. With per-message decisions already in the ledger, compaction can become a *selection*: keep the messages jev marked needed, stub the rest, and only summarize the stubs' one-liners. Cheaper, and it never loses exact text the agent will edit.
+pi's compaction summarizes the conversation with the main model when the context window fills. With decisions per
+message already in the ledger, compaction can become a selection: keep the messages that jev marked as needed, stub
+the rest, and only summarize the one-line stubs. This is cheaper, and it never loses exact text that the agent will
+edit.
 
 ## 5. Working set tracking
 
-Keep a small typed state: files opened, files edited, tests run and their last result, open errors. Code maintains it from tool calls; jev answers "is `file` still in the working set?" when the ledger considers forgetting a read of it. This closes the biggest gap found in the eval: forgetting a file two turns before the agent needs it again.
+Keep a small typed state: the files that were opened, the files that were edited, the tests that ran and their last
+result, the open errors. Code maintains it from the tool calls. When the ledger considers forgetting a read of a file,
+jev answers: is this file still in the working set? This closes the biggest gap that the evaluation found: a file was
+forgotten two turns before the agent needed it again.
 
 ## 6. Learn thresholds from recalls and re-reads
 
-Every recall and every re-read after a forget is a labelled example of a bad decision, with jev's probabilities attached. Fit thresholds per tool and content kind from a few hundred of them. The replay harness already produces the rows.
+Every recall, and every re-read after a forget, is a labeled example of a bad decision, with jev's probabilities
+attached. Fit thresholds per tool and per content kind from a few hundred of them. The replay harness already
+produces the rows.
 
-## 7. Pre-send on user input
+## 7. Compression of user input
 
-Long pastes (stack traces, logs) from the user are tool-result-shaped. The same view machinery applies in the `input` hook, with the original kept for recall.
+Long pastes from the user, such as stack traces and logs, have the shape of a tool result. The same view machinery
+applies in the `input` hook, with the original kept for recall.

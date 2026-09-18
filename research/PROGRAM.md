@@ -1,9 +1,9 @@
 # Autoresearch: pre-send compression
 
-You are improving how a coding agent's large tool outputs are compressed before they are sent to the model.
-Code builds candidate *views* (strict subsets of the output); a fast classifier (jev) chooses which view to send and,
-for code, which block bodies to expand. Full text stays recallable. You may change only the **variant**: prompt texts,
-view descriptions, thresholds and view parameters. The code that builds views is fixed for this run.
+You improve how the large tool outputs of a coding agent are compressed before they are sent to the model.
+Code builds candidate *views* (strict subsets of the output). A fast classifier (jev) chooses which view to send and,
+for code, which block bodies to expand. The full text stays available through recall. You can change only the
+**variant**: prompt texts, view descriptions, thresholds and view parameters. The code that builds views is fixed for this run.
 
 ## Objective (higher is better)
 
@@ -50,11 +50,11 @@ Most command results that are still sent full are `grep -A/-B` context output an
 ```
 
 Omitted fields keep the current best values. Instructions reach jev as text; backticked paths like `agent.args` or
-`views.signals.preview` refer to fields of the state object. Keep each instruction a single clear judgment.
+`views.signals.preview` refer to fields of the state object. Each instruction must be one clear judgment.
 
 ## Rules
 
 - Propose ONE variant per iteration, changing one or two things, with a hypothesis grounded in the last results.
-- Prefer changes that raise saved% on `command` and `code` without raising edit-miss.
+- Prefer changes that raise saved% on `command` and `code` and do not raise edit-miss.
 - Never propose a variant identical to one already tried.
 - Output only the JSON object, nothing else.
