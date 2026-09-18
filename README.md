@@ -1,13 +1,55 @@
 # pi-jev-lens
 
-A [pi](https://github.com/earendil-works/pi-mono) extension that **compresses large tool results before they reach the
-model**. [jev](https://docs.typesafe.ai), TypeSafe's System One model, picks which view of the output the agent gets:
-an outline, the relevant code blocks, the failing tests, the matching sections. The full text stays one `recall` away.
+**Your coding agent reads a 600-line file to change one function. jev-lens sends the model the outline and that
+function.** The rest is one `recall` away, and the agent knows it.
 
-Avoiding the first send is what saves money: an uncached input token is paid in full, and once sent, a result sits in
-the cached prefix at a tenth of the price for the rest of the session. On 500 real agent trajectories the defaults
-send 79 % fewer tokens for large tool results, with 2 of 26 later edits missing their block (details in
-[Evaluation](#evaluation) and STATUS.md).
+A [pi](https://github.com/earendil-works/pi-mono) extension. Tool output is most of what a coding agent pays for:
+every `cat`, every test run, every `grep` lands in the prompt in full and stays there, cached, for the rest of the
+session. jev-lens steps in before that first send. Code builds a handful of candidate views of the output, and
+[jev](https://docs.typesafe.ai), TypeSafe's System One judgment model, picks the smallest one that still lets the agent
+do its next step. Nothing is generated or summarized: every view is lines of the original, with line numbers, so the
+agent can ask for exactly the part it is missing.
+
+What the model sees instead of a 1.5k-token file:
+
+```
+  1│ import { parse } from "./parse.js";
+     ⋯ 14 lines omitted
+ 16│ export function normalizeCategory(raw) {
+ 17│   const key = raw.trim().toLowerCase();
+ 18│   return ALIASES[key] ?? key;
+ 19│ }
+     ⋯ 61 lines omitted
+ 81│ export function categoryReport(entries) {
+     ⋯ 20 lines omitted
+
+[jev-lens: showing the "relevant" view, 9 of 102 lines. Omitted lines are marked ⋯. Call recall(id: "…") for the
+full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.]
+```
+
+## What the numbers say
+
+We did not guess the defaults; we measured them on 500 real agent trajectories (OpenHands on SWE-rebench, 3300 large
+tool results, 11.6 million tokens) and on our own pi sessions. The research log is STATUS.md; the headlines:
+
+| | |
+|---|---|
+| **79 % fewer tokens** sent for large tool results across the 500 trajectories | 11.6M → 2.4M |
+| **88 % on command output** (test runs, grep, build logs), 58 % on docs, 47 % on listings, 31 % on code | per kind |
+| **2 of 26 later edits** missed their block; 0.3 % of results had a dropped line quoted; 2.2 % had a dropped identifier used | the harm side |
+| **8 % lower cost, 17 % smaller final prompt, same pass rate, zero recalls** on live end-to-end runs where big files get read | pi headless, 3 runs each |
+| **31 % of large-result tokens** cut in real day-to-day sessions with gpt-6-astra | our own `~/.pi/agent/sessions` |
+
+Three things we learned that shaped the design:
+
+- **Compress before the first send, not after.** Pruning old results later looks great on token counts (−19 %) and costs
+  *more* money (+17 %), because every rewrite breaks the prompt cache. Post-send pruning is still in the code, off by default.
+- **Code is different.** Test logs and grep output can lose 90 % and nobody misses it. Code is edited from, and an edit
+  whose old text the model never saw fails. So code views keep every retained line byte-exact, and code is sent full
+  unless jev is confident. The tempting always-outline policy saved more and missed 17 % of later edits; it is opt-in.
+- **Views built in code beat prompt tuning.** Four rounds of letting a researcher model rewrite jev's prompts and
+  thresholds moved nothing that held up on held-out data. Every gain that lasted was a new kind of view: failing tests
+  only, grep match groups, JSON keys, the file the agent `cat`-ed through bash.
 
 ## Install
 
@@ -35,9 +77,9 @@ pi -e ./index.ts
 
 ## How it works
 
-Every text tool result of at least 1200 estimated tokens (characters / 4) passes through pi's `tool_result` hook
-before it is stored or sent. Code builds candidate **views**: strict subsets of the output, with line numbers and
-omission markers, never generated text.
+Every text tool result of at least 1200 estimated tokens (about 5 kB) passes through pi's `tool_result` hook before
+it is stored or sent. Small results are never touched. Code builds candidate **views**: strict subsets of the output,
+with line numbers and omission markers, never generated text.
 
 | view | for | keeps |
 |---|---|---|
@@ -122,8 +164,9 @@ Every decision is logged to `<project>/.pi/jev-lens.log` (JSON lines). `JEV_LENS
 
 ## Evaluation
 
-Benchmark on real OpenHands trajectories (`eval/bench/`, data fetched by `eval/bench/fetch.sh`), scored by what the
-agent actually did next: **edit-miss** (it edited a line the view had dropped), **quote-miss** (it quoted dropped text),
+Every change here is scored against what the agent actually did next in a recorded trajectory, which is the only
+honest judge of "did it need that text". The benchmark is real OpenHands trajectories (`eval/bench/`, data fetched by
+`eval/bench/fetch.sh`), and the metrics are: **edit-miss** (it edited a line the view had dropped), **quote-miss** (it quoted dropped text),
 **ref-miss** (it used an identifier that only existed in the dropped part). Edit-misses are weighted five times in
 the objective, and they are rare, so anything that touches code views must be scored on the 500-trajectory slice:
 
