@@ -10,7 +10,7 @@ import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "
 
 export interface ScoreRow {
 	session: string; tool: string; args: string; kind: string; tokens: number; view: string; viewTokens: number; chosen: string;
-	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; refMiss: boolean; editsChecked: number; ms: number;
+	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; refMiss: boolean; refMissId?: string; editsChecked: number; ms: number;
 }
 
 /** Identifier-like tokens (camelCase, snake_case, dotted, 5+ chars) from text and tool arguments. */
@@ -42,14 +42,17 @@ export async function scoreMessages(
 	const rows: ScoreRow[] = [];
 	let firstUser = "", latestUser = "", lastAssistant = "";
 	const argsById = new Map<string, unknown>();
+	/** Everything the agent has already seen: identifiers from all earlier messages (so ref-miss only counts what it could only have learned from the omitted part). */
+	const seenIds = new Set<string>();
+	const learn = (t: string) => { for (const id of identifiers(t)) seenIds.add(id); };
 	for (let k = 0; k < msgs.length; k++) {
 		const m = msgs[k];
-		if (m.role === "user") { const t = contentText(m.content); if (!firstUser) firstUser = t; latestUser = t; continue; }
-		if (m.role === "assistant") { lastAssistant = contentText(m.content); for (const c of m.content) if (c.type === "toolCall") argsById.set(c.id, c.arguments); continue; }
+		if (m.role === "user") { const t = contentText(m.content); if (!firstUser) firstUser = t; latestUser = t; learn(t); continue; }
+		if (m.role === "assistant") { lastAssistant = contentText(m.content); learn(lastAssistant); for (const c of m.content) if (c.type === "toolCall") { argsById.set(c.id, c.arguments); learn(JSON.stringify(c.arguments ?? {})); } continue; }
 		if (m.role !== "toolResult") continue;
 		const text = contentText(m.content);
 		const tokens = estimateTokensOfText(text);
-		if (tokens < cfg.presendMinTokens) continue;
+		if (tokens < cfg.presendMinTokens) { learn(text); continue; }
 		const args = argsById.get(m.toolCallId);
 		const terms = extractTerms(latestUser, lastAssistant, JSON.stringify(args ?? {}));
 		const cands = await buildCandidatesAsync(m.toolName, args, text, terms, viewParams);
@@ -67,8 +70,9 @@ export async function scoreMessages(
 		const omitted = omittedText(text, view);
 		// ref-miss: the agent's next two steps use an identifier that exists only in the omitted part
 		// (not in the view, the task, its own earlier reasoning or the tool call), i.e. it learned it from what we dropped.
-		const known = new Set([...identifiers(latestUser), ...identifiers(firstUser), ...identifiers(lastAssistant), ...identifiers(JSON.stringify(args ?? {})), ...identifiers(view.text)]);
+		const known = new Set([...seenIds, ...identifiers(view.text)]);
 		const omittedIds = view.kind === "full" ? new Set<string>() : identifiers(omitted);
+		let refMissId = "";
 		// The view is the agent's only knowledge of this output until it reads the same path again
 		// (or for at most 12 assistant messages), so edits of that path in that window are checked.
 		let seen = 0;
@@ -80,7 +84,7 @@ export async function scoreMessages(
 			if (seen === 1) { const nt = contentText(n.content); for (const s of spans(nt)) if (omitted.includes(s) && !view.text.includes(s)) { quoteMiss = true; break; } }
 			if (seen <= 2 && omittedIds.size) {
 				const used = identifiers(contentText(n.content) + " " + JSON.stringify(n.content.filter((c) => c.type === "toolCall").map((c) => (c as { arguments: unknown }).arguments)));
-				for (const id of used) if (omittedIds.has(id) && !known.has(id)) { refMiss = true; break; }
+				for (const id of used) if (omittedIds.has(id) && !known.has(id)) { refMiss = true; refMissId = id; break; }
 			}
 			for (const c of n.content) {
 				if (c.type === "toolCall" && c.name === "read" && path && (c.arguments as { path?: string })?.path === path) reread = true;
@@ -96,7 +100,9 @@ export async function scoreMessages(
 				}
 			}
 		}
-		const row: ScoreRow = { session, tool: m.toolName, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, editsChecked, ms: Date.now() - t0 };
+		// after scoring, the agent has seen the view (not the omitted part)
+		learn(view.text);
+		const row: ScoreRow = { session, tool: m.toolName, refMissId, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, editsChecked, ms: Date.now() - t0 };
 		rows.push(row);
 		onRow?.(row);
 	}
