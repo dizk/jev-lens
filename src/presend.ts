@@ -1,7 +1,7 @@
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import type { Config } from "./config.ts";
 import { truncate } from "./text.ts";
-import { relevantView, splitBlocks, type Block, type Candidates, type View, type ViewKind } from "./views.ts";
+import { relevantView, splitBlocks, splitSections, type Block, type Candidates, type View, type ViewKind } from "./views.ts";
 
 export interface PresendState {
 	task: { first_user_request: string; latest_user_message: string };
@@ -40,10 +40,11 @@ export function buildExpandState(base: PresendState, blocks: Block[], text: stri
 	};
 }
 
-export function expandQuestions(n: number, prompts: PromptVariant = DEFAULT_PROMPTS) {
+export function expandQuestions(n: number, prompts: PromptVariant = DEFAULT_PROMPTS, kind = "code") {
 	const q: Record<string, { type: "noul"; instructions: string; criteria: { true: string; false: string } }> = {};
+	const [instructions, t, f] = kind === "command" ? [prompts.sectionInstructions, prompts.sectionTrue, prompts.sectionFalse] : [prompts.expandInstructions, prompts.expandTrue, prompts.expandFalse];
 	for (let i = 0; i < n; i++) {
-		q[`b${i}`] = { type: "noul", instructions: prompts.expandInstructions.replaceAll("{i}", String(i)), criteria: { true: prompts.expandTrue, false: prompts.expandFalse } };
+		q[`b${i}`] = { type: "noul", instructions: instructions.replaceAll("{i}", String(i)), criteria: { true: t, false: f } };
 	}
 	return q;
 }
@@ -60,6 +61,7 @@ const VIEW_DESCRIPTIONS: Record<ViewKind, string> = {
 	log: "Script or server output with repeated lines collapsed: the first two and the last occurrence of every repeated line pattern, plus errors and the final lines. Enough to follow what happened; not enough to see every iteration.",
 	tree: "A directory listing reduced to the first few entries of every directory, with the number of omitted entries per directory. Enough to learn the project layout, not enough to find one specific file in a large directory.",
 	testlog: "A test run reduced to the failing tests with their assertion and traceback, the short summary and the final counts. Passing tests and decoration are dropped. Enough for reacting to a test run; not enough to see the output of passing tests.",
+	sections: "The first line of every section of the output (grep match groups, JSON objects, paragraphs, command markers), line-numbered. The bodies of the sections the agent needs are added in a second step. Enough when only some parts of a long mixed output matter.",
 };
 
 export function buildPresendState(
@@ -88,6 +90,10 @@ export interface PromptVariant {
 	expandInstructions: string;
 	expandTrue: string;
 	expandFalse: string;
+	/** Second step for command output: per section, will the agent need its contents. */
+	sectionInstructions: string;
+	sectionTrue: string;
+	sectionFalse: string;
 }
 
 export const DEFAULT_PROMPTS: PromptVariant = {
@@ -101,6 +107,9 @@ export const DEFAULT_PROMPTS: PromptVariant = {
 	expandInstructions: "The agent working on `task` just read this file (`agent.args`) for the reason in `agent.text_before_call`. Will it need the full body of block `blocks[{i}]` (not just its signature) for its next step?",
 	expandTrue: "The task or the agent's stated purpose concerns this block: it will edit it, call it in a specific way, explain its logic, or debug it.",
 	expandFalse: "The block is unrelated to the task, or knowing its signature and existence is enough.",
+	sectionInstructions: "The agent working on `task` just ran the command `agent.args` for the reason in `agent.text_before_call`. The output is split into sections listed in `blocks`. Will the agent need the contents of section `blocks[{i}]` (not just its first line) for its next step?",
+	sectionTrue: "The section holds the result, error, value or match the agent ran the command to see, or something it will quote, compare or act on.",
+	sectionFalse: "The section is boilerplate, an unrelated match, setup or progress output, or its first line already tells the agent what it needs.",
 };
 
 export function presendQuestions(kinds: ViewKind[], prompts: PromptVariant = DEFAULT_PROMPTS) {
@@ -115,7 +124,7 @@ export function presendQuestions(kinds: ViewKind[], prompts: PromptVariant = DEF
 export class JevPresend implements PresendClassifier {
 	constructor(private client: TypeSafeClient, private model: string, private prompts: PromptVariant = DEFAULT_PROMPTS) {}
 	async expand(state: ExpandState, signal?: AbortSignal): Promise<number[]> {
-		const r = await this.client.systemOne({ state: state as never, questions: expandQuestions(state.blocks.length, this.prompts), model: this.model }, { signal, timeout: 15000 });
+		const r = await this.client.systemOne({ state: state as never, questions: expandQuestions(state.blocks.length, this.prompts, state.file.kind), model: this.model }, { signal, timeout: 15000 });
 		return state.blocks.map((_, i) => (r.answers[`b${i}`] as { noul: number }).noul);
 	}
 	async choose(state: PresendState, kinds: ViewKind[], signal?: AbortSignal) {
@@ -146,9 +155,15 @@ export class MockPresend implements PresendClassifier {
 export function decideView(
 	answer: { choice: ViewKind; probabilities: Record<string, number>; confidence: number; needsFull: number },
 	cands: Candidates,
-	cfg: Pick<Config, "presendNeedsFullAbove" | "presendFullMassAbove" | "presendMinConfidence" | "presendCodeNeedsFullAbove" | "presendCommandNeedsFullAbove"> & Partial<Pick<Config, "presendCodePolicy">>,
+	cfg: Pick<Config, "presendNeedsFullAbove" | "presendFullMassAbove" | "presendMinConfidence" | "presendCodeNeedsFullAbove" | "presendCommandNeedsFullAbove"> & Partial<Pick<Config, "presendCodePolicy" | "presendCommandPolicy">>,
 ): View {
 	const full = cands.views[0];
+	if (cands.kind === "command" && cfg.presendCommandPolicy === "sections") {
+		// sections-first: when jev would send full but does not think exact full text is needed, send the
+		// section headers and let the second step put back the sections it needs (full if that reaches 90 %).
+		const sections = cands.views.find((v) => v.kind === "sections");
+		if (sections && answer.choice === "full" && answer.needsFull <= cfg.presendCommandNeedsFullAbove) return sections;
+	}
 	if (cands.kind === "code" && cfg.presendCodePolicy === "outline") {
 		// outline-first: structure now, bodies via the expansion step, everything else via recall
 		const outline = cands.views.find((v) => v.kind === "outline");
@@ -164,8 +179,8 @@ export function decideView(
 }
 
 /**
- * Second node of the pre-send graph: when a code file was reduced to its outline, ask jev which
- * block bodies the agent will need and put those back. Returns undefined when not applicable.
+ * Second node of the pre-send graph: when a code file was reduced to its outline (or command output to its
+ * section headers), ask jev which block bodies the agent will need and put those back. Returns undefined when not applicable.
  */
 export async function expandRelevantBlocks(
 	presend: PresendClassifier,
@@ -176,16 +191,23 @@ export async function expandRelevantBlocks(
 	threshold: number,
 	signal?: AbortSignal,
 	precomputed?: Block[],
+	/** Command output only: send full when no section reaches this probability (0 = headers alone are allowed). */
+	floor = 0,
 ): Promise<{ view: View; blocks: Block[]; probs: number[] } | undefined> {
-	if (cands.kind !== "code" || (chosen.kind !== "outline" && chosen.kind !== "focus")) return undefined;
-	const blocks = precomputed && precomputed.length >= 2 ? precomputed : splitBlocks(text);
+	const isCode = cands.kind === "code" && (chosen.kind === "outline" || chosen.kind === "focus");
+	const isCommand = cands.kind === "command" && chosen.kind === "sections";
+	if (!isCode && !isCommand) return undefined;
+	const blocks = precomputed && precomputed.length >= 2 ? precomputed : isCommand ? splitSections(text) : splitBlocks(text);
 	if (blocks.length < 2) return undefined;
 	const probs = await presend.expand(buildExpandState(base, blocks, text), signal);
 	const expand = new Set<number>();
 	probs.forEach((p, i) => { if (p > threshold) expand.add(i); });
 	// the import/constants header is small and often edited (new imports): always keep it whole when short
-	if (blocks[0]?.name.startsWith("(header") && blocks[0].to - blocks[0].from < 20) expand.add(0);
-	const outline = cands.views.find((v) => v.kind === "outline");
+	if (isCode && blocks[0]?.name.startsWith("(header") && blocks[0].to - blocks[0].from < 20) expand.add(0);
+	// Command output where every section scores low is "cannot tell", not "nothing needed" (docs read for
+	// orientation score flat and low): headers alone would drop what the agent came for, so send it all.
+	if (isCommand && Math.max(...probs) < floor) return { view: cands.views[0], blocks, probs };
+	const outline = cands.views.find((v) => v.kind === (isCommand ? "sections" : "outline"));
 	const view = relevantView(text, cands.kind, blocks, expand, outline?.included);
 	if (view.chars >= cands.views[0].chars * 0.9) return { view: cands.views[0], blocks, probs };
 	return { view, blocks, probs };

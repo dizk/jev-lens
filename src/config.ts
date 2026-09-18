@@ -54,6 +54,12 @@ export interface Config {
 	presendMinConfidence: number;
 	/** Second step for code: expand the bodies of blocks jev says the agent will need (P above this). */
 	presendExpandAbove: number;
+	/** Command policy: "sections" (default) = when jev picks full for command output but needs-full is under the command threshold, send section headers and let the second step expand the sections it needs; "gate" = jev's view choice stands. */
+	presendCommandPolicy: "gate" | "sections";
+	/** Second step for command output: expand a section when P(needed) is above this. */
+	presendSectionExpandAbove: number;
+	/** Command output: when no section reaches this probability the step is uninformative and full is sent (0 = headers alone are allowed). */
+	presendSectionFloor: number;
 	model: string;
 	/** Optional variant file (JEV_MEMORY_VARIANT): { config, prompts, views } overrides, as produced by eval/bench/autoresearch.ts. */
 	variantFile: string | undefined;
@@ -114,6 +120,9 @@ export function loadConfig(): Config {
 		presendCodePolicy: process.env.JEV_MEMORY_PRESEND_CODE_POLICY === "gate" ? "gate" : "outline",
 		presendMinConfidence: num("JEV_MEMORY_PRESEND_MIN_CONFIDENCE", 0),
 		presendExpandAbove: num("JEV_MEMORY_PRESEND_EXPAND_ABOVE", 0.5),
+		presendCommandPolicy: process.env.JEV_MEMORY_PRESEND_COMMAND_POLICY === "gate" ? "gate" : "sections",
+		presendSectionExpandAbove: num("JEV_MEMORY_PRESEND_SECTION_EXPAND_ABOVE", 0.5),
+		presendSectionFloor: num("JEV_MEMORY_PRESEND_SECTION_FLOOR", 0.3),
 		model: process.env.JEV_MEMORY_MODEL || "jev-latest",
 		variantFile: process.env.JEV_MEMORY_VARIANT || undefined,
 		forceMock: process.env.JEV_MEMORY_CLASSIFIER === "mock",

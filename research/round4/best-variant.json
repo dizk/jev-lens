@@ -1,0 +1,7 @@
+{
+ "name": "signals-tighter-context",
+ "hypothesis": "Reducing signals trailing output improved measured objective without increasing misses, although it was not retained; reducing per-signal context instead should save tokens across frequent command views while leaving code-edit safeguards unchanged.",
+ "views": {
+  "signalsCtx": 1
+ }
+}

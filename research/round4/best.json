@@ -1,0 +1,70 @@
+{
+ "variant": {
+  "name": "signals-tighter-context",
+  "hypothesis": "Reducing signals trailing output improved measured objective without increasing misses, although it was not retained; reducing per-signal context instead should save tokens across frequent command views while leaving code-edit safeguards unchanged.",
+  "views": {
+   "signalsCtx": 1
+  }
+ },
+ "objective": 78.13770097397123,
+ "summary": {
+  "results": 671,
+  "compressed": 606,
+  "tokens": 2397462,
+  "sent": 445535,
+  "savedPct": 81.4163894985614,
+  "editable": 6,
+  "editMiss": 0,
+  "editMissPct": 0,
+  "quoteMiss": 4,
+  "quoteMissPct": 0.5961251862891207,
+  "refMiss": 14,
+  "refMissPct": 2.0864381520119224,
+  "views": {
+   "relevant": 90,
+   "signals": 344,
+   "testlog": 84,
+   "outline": 33,
+   "full": 65,
+   "tree": 27,
+   "log": 4,
+   "focus": 19,
+   "matches": 3,
+   "head_tail": 2
+  },
+  "byKind": {
+   "code": {
+    "n": 111,
+    "savedPct": 52.65250503319923,
+    "editMissPct": 0,
+    "refMissPct": 4.504504504504505
+   },
+   "command": {
+    "n": 479,
+    "savedPct": 87.63947170559308,
+    "editMissPct": 0,
+    "refMissPct": 1.2526096033402923
+   },
+   "prose": {
+    "n": 42,
+    "savedPct": 69.1489155693261,
+    "editMissPct": 0,
+    "refMissPct": 4.761904761904762
+   },
+   "listing": {
+    "n": 36,
+    "savedPct": 54.804521340151986,
+    "editMissPct": 0,
+    "refMissPct": 2.7777777777777777
+   },
+   "data": {
+    "n": 3,
+    "savedPct": 0,
+    "editMissPct": 0,
+    "refMissPct": 0
+   }
+  },
+  "objective": 78.13770097397123,
+  "meanMs": 389.8956780923994
+ }
+}

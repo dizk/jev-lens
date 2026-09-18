@@ -13,6 +13,8 @@ import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "
 export interface ScoreRow {
 	session: string; tool: string; args: string; kind: string; tokens: number; view: string; viewTokens: number; chosen: string;
 	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; refMiss: boolean; refMissId?: string; editsChecked: number; ms: number;
+	/** Per-block probabilities from the expansion step, when it ran. */
+	expandProbs?: number[];
 }
 
 /** Code-like identifiers only: snake_case, camelCase or containing digits, 5+ chars. Plain words (even long ones) are not identifiers. */
@@ -70,8 +72,9 @@ export async function scoreMessages(
 		let answer: Awaited<ReturnType<PresendClassifier["choose"]>>;
 		try { answer = await presend.choose(state, cands.views.map((v) => v.kind)); } catch { continue; }
 		let view = decideView(answer, cands, cfg);
+		let expandProbs: number[] | undefined;
 		if (view.kind !== "full") {
-			try { const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, undefined, cands.blocks); if (ex) view = ex.view; } catch {}
+			try { const ex = await expandRelevantBlocks(presend, state, text, cands, view, cands.kind === "command" ? cfg.presendSectionExpandAbove : cfg.presendExpandAbove, undefined, cands.blocks, cfg.presendSectionFloor); if (ex) { view = ex.view; expandProbs = ex.probs.map((p) => Math.round(p * 100) / 100); } } catch {}
 		}
 		const a = args as { path?: string; command?: string } | undefined;
 		const paths = a?.path ? [a.path] : m.toolName === "bash" && a?.command ? displayedFiles(a.command) ?? [] : [];
@@ -120,7 +123,7 @@ export async function scoreMessages(
 		}
 		// after scoring, the agent has seen the view (not the omitted part)
 		learn(view.text);
-		const row: ScoreRow = { session, tool: m.toolName, refMissId, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, editsChecked, ms: Date.now() - t0 };
+		const row: ScoreRow = { session, tool: m.toolName, refMissId, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, editsChecked, ms: Date.now() - t0, expandProbs };
 		rows.push(row);
 		onRow?.(row);
 	}

@@ -392,9 +392,10 @@ export default function (pi: ExtensionAPI) {
 			let view = decideView(answer, cands, cfg);
 			let expanded: number[] | undefined;
 			if (view.kind !== "full") {
-				const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, signal, cands.blocks);
+				const above = cands.kind === "command" ? cfg.presendSectionExpandAbove : cfg.presendExpandAbove;
+				const ex = await expandRelevantBlocks(presend, state, text, cands, view, above, signal, cands.blocks, cfg.presendSectionFloor);
 				if (epoch !== generation || signal.aborted) return;
-				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > cfg.presendExpandAbove ? i : -1)).filter((i) => i >= 0); }
+				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > above ? i : -1)).filter((i) => i >= 0); }
 			}
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
 			if (view.kind === "full") return;

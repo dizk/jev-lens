@@ -1,0 +1,26 @@
+[autoresearch] baseline evaluation
+[autoresearch] baseline objective 76.35 saved 79.5% editMiss 0.0%
+[autoresearch] iteration 1/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "command-sections-fallback": Routing low-needs-full command outputs through section expansion should reduce the baseline's remaining full outputs while preserving needed match context and leaving code-edit safeguards unchanged.
+[autoresearch] "command-sections-fallback" objective 76.98 (best 76.35) saved 80.3% editMiss 0.0% quoteMiss 0.6% refMiss 2.1% in 44s → KEEP
+[autoresearch] iteration 2/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "command-sections-wider-gate": Section fallback increased command savings without increasing command reference misses; modestly widening its needs-full gate should compress more remaining full command outputs while leaving code-edit safeguards unchanged.
+[autoresearch] "command-sections-wider-gate" objective 75.96 (best 76.98) saved 79.4% editMiss 0.0% quoteMiss 0.6% refMiss 2.2% in 43s → discard
+[autoresearch] iteration 3/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "command-sections-finer-chunks": Section fallback improved command savings, but widening its gate did not; smaller unstructured-output chunks should let expansion retain needed debug details with less unrelated text while leaving code-edit safeguards unchanged.
+[autoresearch] "command-sections-finer-chunks" objective 75.72 (best 76.98) saved 79.1% editMiss 0.0% quoteMiss 0.6% refMiss 2.2% in 43s → discard
+[autoresearch] iteration 4/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "sections-purposeful-expansion": Since wider routing and finer chunks reduced savings, making section expansion distinguish actionable details from merely related context should improve command compression without changing code-edit safeguards.
+[autoresearch] "sections-purposeful-expansion" objective 75.82 (best 76.98) saved 78.9% editMiss 0.0% quoteMiss 0.6% refMiss 1.9% in 44s → discard
+[autoresearch] iteration 5/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "sections-targeted-view-description": Section gate, chunking and expansion changes failed to improve savings; clarifying when to select sections may compress remaining grep-context and debug outputs while preserving test-log routing and code-edit safeguards.
+[autoresearch] "sections-targeted-view-description" objective 75.89 (best 76.98) saved 79.6% editMiss 0.0% quoteMiss 0.7% refMiss 2.2% in 44s → discard
+[autoresearch] iteration 6/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-less-trailing-output": Section-routing changes have not beaten the best variant; reducing trailing lines in the heavily used signals view should improve command savings while retaining error context and leaving code-edit safeguards unchanged.
+[autoresearch] "signals-less-trailing-output" objective 77.12 (best 76.98) saved 80.4% editMiss 0.0% quoteMiss 0.6% refMiss 2.1% in 45s → discard
+[autoresearch] iteration 7/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-tighter-context": Reducing signals trailing output improved measured objective without increasing misses, although it was not retained; reducing per-signal context instead should save tokens across frequent command views while leaving code-edit safeguards unchanged.
+[autoresearch] "signals-tighter-context" objective 78.14 (best 76.98) saved 81.4% editMiss 0.0% quoteMiss 0.6% refMiss 2.1% in 46s → KEEP
+[autoresearch] iteration 8/8: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-trim-tail-with-context": Tighter signal context raised command savings without increasing misses; reducing the tail to six lines should add savings across the now more frequent signals views while retaining immediate context and leaving code-edit safeguards unchanged.
+[autoresearch] "signals-trim-tail-with-context" objective 76.72 (best 78.14) saved 80.1% editMiss 0.0% quoteMiss 0.7% refMiss 1.9% in 47s → discard

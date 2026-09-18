@@ -3,7 +3,7 @@
  * text (never generated), with line numbers so the agent can ask for exact ranges later.
  */
 
-export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "tree" | "matches" | "log" | "sample" | "head_tail";
+export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "tree" | "matches" | "log" | "sample" | "head_tail" | "sections";
 
 export interface View {
 	kind: ViewKind;
@@ -364,9 +364,17 @@ export interface ViewParams {
 	matchesPerFile: number;
 	/** Log-like output: offer the "log" view that collapses repeated line templates. */
 	logView: boolean;
+	/** Command output: offer the "sections" view (first line of every section; bodies expanded in a second step). */
+	sectionsView: boolean;
+	/** Sections shorter than this are merged into their predecessor. */
+	sectionMinLines: number;
+	/** At most this many sections (adjacent ones are merged beyond it). */
+	sectionMaxBlocks: number;
+	/** Output without any section structure is cut into chunks of this many lines (0 = no sections then). */
+	sectionChunkLines: number;
 	minShrink: number;
 }
-export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 2, signalsTail: 8, testIds: 25, testFailLines: 60, matchesPerFile: 6, logView: true, minShrink: 0.6 };
+export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 1, signalsTail: 8, testIds: 25, testFailLines: 60, matchesPerFile: 6, logView: true, sectionsView: true, sectionMinLines: 3, sectionMaxBlocks: 24, sectionChunkLines: 50, minShrink: 0.6 };
 
 export interface Candidates {
 	kind: ContentKind;
@@ -393,6 +401,9 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 	if (kind === "command") add(testlogView(text, P.signalsCtx, P.testFailLines, P.testIds));
 	if (kind === "command" || kind === "listing") add(matchesView(text, P.matchesPerFile, tidy));
 	if (kind === "command" && P.logView) add(logView(text, tidy));
+	// A plain file display that stayed "command" (mixed file types) may still be edited from: no section headers for it.
+	const isFileDisplay = kind === "command" && typeof (args as { command?: unknown })?.command === "string" && displayedFiles((args as { command: string }).command) !== undefined;
+	if (kind === "command" && P.sectionsView && !isFileDisplay) add(sectionsView(text, splitSections(text, P.sectionMinLines, P.sectionMaxBlocks, P.sectionChunkLines), tidy));
 	if (kind === "listing") add(treeView(text, 8, terms, tidy));
 	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail, tidy));
 	if (kind === "data") add(sampleView(text, P.sampleRows, tidy));
@@ -444,6 +455,100 @@ export function splitBlocks(text: string, maxBlocks = 32): Block[] {
 	return blocks.slice(0, maxBlocks);
 }
 
+const SECTION_MARK_RE = /^(?:#{1,6}\s|\*{3,}\s*$|={3,}|-{3,}\s*$|_{3,}\s*$|(?:COMMAND|URL|EXIT|FILE|STEP|TEST|RUN|Traceback \(most recent call last\)|Error|ERROR|WARNING|Warning)\b|[A-Z][A-Z0-9 _-]{2,40}:\s*\S|\[[^\]]{1,60}\]\s*$|Running |Collecting |Installing |Processing )/;
+const GREP_PREFIX_RE = /^([^\s:]+?)[-:](\d+)[-:]/;
+const TRIVIAL_LINE_RE = /^\s*(?:[{}\[\]],?|---|```\w*.*|--|\*{3,}|={3,}|-{3,})\s*$/;
+
+/**
+ * Split command output into sections: grep context groups (separated by `--` or a change of file), the
+ * top-level keys or items of a JSON document, markdown headings, marker lines (COMMAND:, URL:, ALL-CAPS labels,
+ * ===== bars, tracebacks) and paragraphs separated by blank lines. Small sections are merged into their
+ * predecessor; at most maxBlocks sections are kept. Output with no structure at all falls back to fixed chunks.
+ */
+export function splitSections(text: string, minLines = 3, maxBlocks = 24, chunkLines = 50): Block[] {
+	const lines = text.split("\n");
+	if (lines.length < 6) return [];
+	const starts: number[] = [];
+	let prevBlank = true, prevFile = "", afterSep = false;
+	// JSON: inside a top-level { or [ at column 0, every line at the first indentation level starts a section
+	let jsonIndent = -1, inJson = false;
+	for (let i = 0; i < lines.length; i++) {
+		const l = lines[i];
+		const blank = !l.trim();
+		let start = false;
+		if (!blank) {
+			if (/^[\[{]\s*$/.test(l)) { start = true; inJson = true; jsonIndent = -1; }
+			else if (inJson) {
+				if (/^[\]}],?\s*$/.test(l)) { inJson = false; }
+				else {
+					const indent = l.length - l.trimStart().length;
+					if (jsonIndent < 0 && indent > 0) jsonIndent = indent;
+					if (indent === jsonIndent && /^\s*(?:"|\{|\[|[\w-]+:)/.test(l)) start = true;
+				}
+			}
+			if (!inJson) {
+				if (prevBlank || afterSep) start = true;
+				if (l === "--") { start = false; afterSep = true; } // grep separator: ends the group before it
+				else afterSep = false;
+				const g = GREP_PREFIX_RE.exec(l);
+				if (g) { if (g[1] !== prevFile) start = true; prevFile = g[1]; }
+				else if (!/^\s/.test(l) && SECTION_MARK_RE.test(l)) start = true;
+			}
+		}
+		if (start && starts[starts.length - 1] !== i) starts.push(i);
+		prevBlank = blank;
+	}
+	if (starts.length < 2 && chunkLines > 0 && lines.length >= chunkLines * 2) {
+		starts.length = 0;
+		for (let i = 0; i < lines.length; i += chunkLines) starts.push(i);
+	}
+	if (starts.length === 0 || starts[0] !== 0) starts.unshift(0);
+	let blocks: Block[] = starts.map((from, k) => ({ name: "", from: from + 1, to: (k + 1 < starts.length ? starts[k + 1] : lines.length) }));
+	// a section made only of braces, fences or bars belongs to the section after it
+	for (let k = 0; k + 1 < blocks.length; k++) {
+		if (lines.slice(blocks[k].from - 1, blocks[k].to).every((l) => !l.trim() || TRIVIAL_LINE_RE.test(l))) { blocks[k + 1].from = blocks[k].from; blocks[k].to = 0; }
+	}
+	blocks = blocks.filter((b) => b.to > 0);
+	// merge sections that are too small into their predecessor
+	const merged: Block[] = [];
+	for (const b of blocks) {
+		const last = merged[merged.length - 1];
+		if (last && b.to - b.from + 1 < minLines) last.to = b.to;
+		else merged.push({ ...b });
+	}
+	blocks = merged;
+	// cap the count by merging adjacent sections evenly
+	while (blocks.length > maxBlocks) {
+		const next: Block[] = [];
+		for (let k = 0; k < blocks.length; k += 2) next.push(k + 1 < blocks.length ? { name: "", from: blocks[k].from, to: blocks[k + 1].to } : blocks[k]);
+		blocks = next;
+	}
+	if (blocks.length < 2) return [];
+	for (const b of blocks) b.name = sectionName(lines, b);
+	return blocks;
+}
+
+/** First meaningful line of a section; a bare brace, fence or bar is joined with the line after it. */
+function sectionName(lines: string[], b: Block): string {
+	const body = lines.slice(b.from - 1, b.to).filter((l) => l.trim());
+	const first = body[0] ?? "";
+	if (TRIVIAL_LINE_RE.test(first) && body[1]) return tidyLine(`${first.trim()} ${body[1].trim()}`).slice(0, 120);
+	return tidyLine(first).trim().slice(0, 120);
+}
+
+/** The first non-empty line of every section, line-numbered, with omission markers between. */
+export function sectionsView(text: string, blocks: Block[], tidy = true): View | undefined {
+	if (blocks.length < 2) return undefined;
+	const lines = text.split("\n");
+	const idx: number[] = [];
+	for (const b of blocks) {
+		let i = b.from - 1;
+		while (i < b.to - 1 && (!lines[i].trim() || lines[i] === "--")) i++;
+		idx.push(i);
+	}
+	return make("sections", lines, idx, tidy);
+}
+
 /** Outline plus the full bodies of the chosen blocks. */
 export function relevantView(text: string, kind: ContentKind, blocks: Block[], expand: Set<number>, outlineIncluded?: number[]): View {
 	const lines = text.split("\n");
@@ -464,6 +569,11 @@ export function relevantView(text: string, kind: ContentKind, blocks: Block[], e
 export async function buildCandidatesAsync(toolName: string, args: unknown, text: string, terms: string[], params: Partial<ViewParams> = {}): Promise<Candidates & { blocks?: Block[] }> {
 	const minShrink = params.minShrink ?? DEFAULT_VIEW_PARAMS.minShrink;
 	const base = buildCandidates(toolName, args, text, terms, params);
+	if (base.kind === "command") {
+		const P = { ...DEFAULT_VIEW_PARAMS, ...params };
+		const blocks = base.views.some((v) => v.kind === "sections") ? splitSections(text, P.sectionMinLines, P.sectionMaxBlocks, P.sectionChunkLines) : [];
+		return { ...base, blocks: blocks.length >= 2 ? blocks : undefined };
+	}
 	if (base.kind !== "code") return base;
 	try {
 		const { languageForPath, treeSitterBlocks, treeSitterOutline } = await import("./treesitter.ts");

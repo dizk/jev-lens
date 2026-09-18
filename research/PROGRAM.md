@@ -17,7 +17,18 @@ view descriptions, thresholds and view parameters. The code that builds views is
   (not in the view, the task, its own reasoning or the tool call): it learned something from what we dropped.
 
 Kinds of results: `command` (bash output, the majority), `code`, `prose`, `data`, `listing`.
-Views: `full`, `outline`, `relevant` (outline + expanded blocks), `focus`, `signals`, `sample`, `head_tail`.
+Views: `full`, `outline`, `relevant` (outline + expanded blocks), `focus`, `signals`, `testlog`, `tree`, `matches`, `log`,
+`sample`, `head_tail`, and `sections` (command output: the first line of every section, i.e. grep match groups, JSON
+keys, headings, marker lines, paragraphs; when chosen, a second jev step asks per section whether the agent needs its
+contents and puts those back, giving `relevant`).
+
+The `sections` route has its own knobs: `config.presendCommandPolicy` (`sections`, the default, =
+when jev picks full for command output with needs-full under `presendCommandNeedsFullAbove`, send sections and expand; `gate` = jev's choice stands),
+`config.presendSectionExpandAbove` (P threshold per section), `config.presendSectionFloor` (send full when no section reaches this probability; 0 = headers alone are allowed), `views.sectionMinLines`, `views.sectionMaxBlocks`,
+`views.sectionChunkLines` (chunk size for unstructured output, 0 = none), `views.sectionsView` (offer it at all), and the
+prompt texts `sectionInstructions` / `sectionTrue` / `sectionFalse` (the per-section question; `{i}` is the section index).
+Most command results that are still sent full are `grep -A/-B` context output and debug-script output; that is where
+`sections` should win, and `testlog`/`signals` should keep test runs.
 
 ## Variant format (JSON)
 
@@ -25,13 +36,14 @@ Views: `full`, `outline`, `relevant` (outline + expanded blocks), `focus`, `sign
 {
   "name": "short-name",
   "hypothesis": "one sentence on why this should help",
-  "config": { "presendNeedsFullAbove": 0.5, "presendFullMassAbove": 0.5, "presendMinConfidence": 0, "presendExpandAbove": 0.5, "presendMinTokens": 1200 },
+  "config": { "presendNeedsFullAbove": 0.5, "presendFullMassAbove": 0.5, "presendMinConfidence": 0, "presendExpandAbove": 0.5, "presendMinTokens": 1200, "presendCommandNeedsFullAbove": 0.65, "presendCommandPolicy": "sections", "presendSectionExpandAbove": 0.5, "presendSectionFloor": 0.3 },
   "prompts": {
     "viewInstructions": "...", "viewDescriptions": { "signals": "...", "outline": "..." },
     "needsFullInstructions": "...", "needsFullTrue": "...", "needsFullFalse": "...",
-    "expandInstructions": "... block `blocks[{i}]` ...", "expandTrue": "...", "expandFalse": "..."
+    "expandInstructions": "... block `blocks[{i}]` ...", "expandTrue": "...", "expandFalse": "...",
+    "sectionInstructions": "... section `blocks[{i}]` ...", "sectionTrue": "...", "sectionFalse": "..."
   },
-  "views": { "headLines": 40, "tailLines": 20, "focusCtx": 3, "sampleRows": 12, "signalsCtx": 2, "signalsTail": 8, "testIds": 25, "minShrink": 0.6 }
+  "views": { "headLines": 40, "tailLines": 20, "focusCtx": 3, "sampleRows": 12, "signalsCtx": 1, "signalsTail": 8, "testIds": 25, "minShrink": 0.6, "sectionsView": true, "sectionMinLines": 3, "sectionMaxBlocks": 24, "sectionChunkLines": 50 }
 }
 ```
 

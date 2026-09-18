@@ -309,6 +309,39 @@ The split is now by content kind: views of code and prose keep retained lines ex
 
 The new scorer also checks bash file displays for edit-miss (with re-reads excluded). On the five Astra sessions it finds 1 edit-miss in 3 checked edits across all three variants: `cat semantic.py; cat cli.py; cat polymarket.py` compressed to `relevant`, and the agent then edited a block that was left out. One sample, but it is the exact risk of typing bash displays as code, and the earlier scorer could not see it. The two-turn expansion step is the place to fix it, not the parser.
 
+## Sections: jev picks the parts of command output (2026-09-18, night)
+
+**Why.** After bash file displays became code, 24 of the Astra sessions' large results were still sent full: heredoc Python output, JSON dumps, curl'ed docs, mixed pipelines. On the holdout the 25 command results still sent full were mostly `grep -A/-B` context and debug-script output. None of the existing views fit: `signals` keeps errors, `testlog` keeps failures, neither keeps "the match group the agent came for".
+
+**What was built.** `splitSections` (`src/views.ts`) carves command output into sections: grep context groups (`--` and file changes), the top-level keys of a JSON document, markdown headings, marker lines (`COMMAND:`, `URL:`, ALL-CAPS labels, `=====` bars, tracebacks) and blank-line paragraphs; small sections merge into their predecessor, unstructured output falls back to fixed chunks, at most 24 sections. A `sections` view (the first line of every section, numbered) is offered for command output. When it is chosen, the existing second jev step asks per section "will the agent need its contents" (own prompt texts, `sectionInstructions`) and puts the chosen sections back, giving `relevant`. Plain file displays that stayed `command` (mixed file types) never get section headers, since the agent may edit from them.
+
+Two policies: `gate` (jev's view choice stands, sections is one candidate) and `sections` (when jev picks full for command output but needs-full is under the command threshold, send sections and expand). Under `gate` jev chose sections for 2 of 43 Astra results, so `sections` is what makes it act.
+
+**The floor.** Under the raw `sections` policy the Astra replay saved 54 % but with 6 ref-misses, because jev's per-section probabilities on docs read for orientation are flat and low (median 0.24, `TypeSafeClient` learned from a dropped section) and nothing got expanded: 11.3k tokens became 249. That pattern is "cannot tell", not "nothing needed". `presendSectionFloor` sends full when no section reaches it. Offline simulation on runs that logged the probabilities (`eval/bench/holdout-v17-sections-floor0.json`, `expandProbs` per row):
+
+| floor | holdout saved | holdout ref-miss | Astra saved | Astra ref-miss |
+|---|---|---|---|---|
+| 0 | 79.9 % | 19 | 39.3 % | 3 |
+| 0.3 | 79.7 % | 19 | 35.0 % | 2 |
+| 0.5 | 78.4 % | 18 | 12.5 % | 2 |
+
+0.3 removes the docs case for 0.2 points on the holdout; 0.5 would give back most of the Astra gain. Default 0.3.
+
+**Autoresearch round 4** (`research/round4/`, researcher gpt-6-astra, 100 training trajectories, 8 iterations): its first proposal was the `sections` policy itself (train 76.35 → 76.98, kept); a wider command gate, finer chunks, a rewritten section question and a rewritten view description were discarded; `signalsCtx` 2 → 1 was kept (78.14). Prompt wording again moved nothing; a code-built view and one integer did.
+
+**Holdout** (same scorer, `eval/bench/holdout-v16..v19`):
+
+| variant | saved | sent | edit-miss | quote-miss | ref-miss | objective |
+|---|---|---|---|---|---|---|
+| gate (sections only as a candidate) | 78.6 % | 487.6k | 0/15 | 5 | 16 | 74.8 |
+| sections policy, floor 0 | 79.9 % | 456.7k | 0/15 | 4 | 19 | 76.2 |
+| sections policy, floor 0.3 | 79.3 % | 470.3k | 0/15 | 4 | 17 | 75.7 |
+| + signalsCtx 1 (autoresearch winner), **new default** | 81.7 % | 415.6k | 0/15 | 4 | 20 | 77.7 |
+
+The winner transfers this time (+2.0 on holdout against +1.2 on train), unlike rounds 1 to 3, at the cost of three more ref-misses (2.9 %): with less context, `signals` wins over `testlog` more often (330 vs 254 views). Astra sessions with the new defaults: 34 % saved on 53 large results (47 % on command output) against 6.5 % under gate, 0 quote-miss, 2 ref-miss (`__pycache__` and one real), and the one pre-existing edit-miss on the `cat semantic.py; cat cli.py; cat polymarket.py` read.
+
+**Left open.** The Astra ref-miss at floor 0.3 and the edit-miss both come from the expansion step keeping too little of code-like output; the expansion threshold (0.5) is the next knob, and a two-turn look-back (did the agent edit a file it read through bash) would make the scorer's edit-miss the training signal for it.
+
 ## What to try next
 
 1. **Pre-send judgment**: built, see above. Next are more view types and learned thresholds.

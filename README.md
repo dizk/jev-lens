@@ -37,6 +37,7 @@ files have that type. Pipelines may only filter stdin with recognized options. R
 | `tree` | directory listings | a sample of entries per directory, with omission counts |
 | `matches` | search output | first matches per file, with omission counts |
 | `log` | repetitive output | representative repeated lines, errors and the tail |
+| `sections` | command output | the first line of every section (grep match groups, JSON keys, headings, `COMMAND:`-style markers, paragraphs); a second jev step puts back the sections the agent needs, giving `relevant` |
 
 Code structure comes from tree-sitter (grammars from `@vscode/tree-sitter-wasm` plus `@binclusive/tree-sitter-kotlin-wasm`):
 TypeScript, TSX, JavaScript, Kotlin, Java, Rust, Python, Go, C, C++, C#, Ruby, PHP, Bash, CSS. Large classes and impl blocks
@@ -131,6 +132,9 @@ session totals. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every cal
 | `JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
 | `JEV_MEMORY_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
 | `JEV_MEMORY_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output; the question is phrased for edits, and test runs rarely need exact full text (+3.3 points on the benchmark, no extra misses) |
+| `JEV_MEMORY_PRESEND_COMMAND_POLICY` | `sections` | when jev picks full for command output but needs-full is under the command threshold, send the section headers and let the second step expand the needed sections (full again if that reaches 90 %). `gate`: jev's view choice stands. |
+| `JEV_MEMORY_PRESEND_SECTION_EXPAND_ABOVE` | `0.5` | expand a section of command output when P(needed) exceeds this |
+| `JEV_MEMORY_PRESEND_SECTION_FLOOR` | `0.3` | send full when no section of command output reaches this probability (the expansion step could not tell, typical for docs read for orientation); `0` allows headers alone |
 | `JEV_MEMORY_PRESEND_CODE_POLICY` | `outline` | prefer an available code outline, then expand selected bodies; fall back to full if expansion reaches 90 % of original size. `gate`: use needs-full/full-mass gates instead. |
 | `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold; bypassed when outline policy finds an outline |
 | `JEV_MEMORY_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 disables the check); bypassed by outline-first code selection |
