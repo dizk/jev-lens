@@ -182,6 +182,25 @@ a regression guard and for parameter sweeps (thresholds, `testIds`, context size
 informative: every variant that pushed code towards `focus` or `relevant` produced 25 % edit-miss on train. The researcher only touches text and numbers; the view builders are code
 and stay fixed within a loop.
 
+### Live check of the round-3 variant on gpt-5.6-luna
+
+`jev-presend-r3` = pre-send with `research/round3/best.json` loaded through `JEV_MEMORY_VARIANT`, compound and marathon × 3:
+
+| task | condition | passed | uncached / run | cached / run | hit | final prompt | cost units / run | compressed | recalls |
+|---|---|---|---|---|---|---|---|---|---|
+| marathon | baseline | 3/3 | 52.9k | 200.2k | 79 % | 17.7k | 72.9k | | 0 |
+| marathon | pre-send default | 3/3 | 51.4k | 157.7k | 75 % | 14.7k | 67.1k | 10/14 | 0 |
+| marathon | pre-send, round-3 variant | 3/3 | 71.0k | 162.1k | 70 % | 16.1k | 87.2k | 8/13 | 0 |
+| compound | baseline | 3/3 | 24.8k | 63.3k | 72 % | 7.0k | 31.1k | | 0 |
+| compound | pre-send default | 3/3 | 27.9k | 69.3k | 71 % | 7.5k | 34.8k | 0/0 | 0 |
+| compound | pre-send, round-3 variant | 2/3 | 26.2k | 38.2k | 59 % | 4.9k | 30.1k | 0/0 | 0 |
+
+Read with care: the compound failure is a Codex outage ("Our servers are currently overloaded", four calls, zero
+tokens), and the expensive marathon run had five calls with `cacheRead` 0 on an unchanged prefix during the same
+window, so the cost difference is provider noise, not the variant. Quality is unchanged (all real runs passed, zero
+recalls), and compound reads nothing large, so the variant cannot show there. Conclusion as on the benchmark: the
+round-3 variant is indistinguishable from the default; keep the default.
+
 ## Procedural graph prototype (`eval/action-graph.ts`)
 
 Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
