@@ -165,9 +165,12 @@ export function decideView(
 		if (sections && answer.choice === "full" && answer.needsFull <= cfg.presendCommandNeedsFullAbove) return sections;
 	}
 	if (cands.kind === "code" && cfg.presendCodePolicy === "outline") {
-		// outline-first: structure now, bodies via the expansion step, everything else via recall
+		// outline-first: structure now, bodies via the expansion step, everything else via recall.
+		// Only when the expansion step can run (2+ blocks): an outline nobody can expand was edited from at once.
 		const outline = cands.views.find((v) => v.kind === "outline");
-		if (outline) return outline;
+		const blocks = (cands as { blocks?: Block[] }).blocks;
+		if (outline && blocks && blocks.length >= 2) return outline;
+		if (outline && !(blocks && blocks.length >= 2)) return full;
 	}
 	const needsFullAbove = cands.kind === "code" ? Math.min(cfg.presendNeedsFullAbove, cfg.presendCodeNeedsFullAbove) : cands.kind === "command" ? cfg.presendCommandNeedsFullAbove : cfg.presendNeedsFullAbove;
 	if (answer.needsFull > needsFullAbove) return full;

@@ -387,6 +387,8 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 	const kind = detectKind(toolName, args, text);
 	const full = fullView(text);
 	const cands: View[] = [full];
+	// The agent's own edit/write results echo the file it is working on and will edit again: never reduce them.
+	if (toolName === "edit" || toolName === "write" || toolName === "str_replace_editor") return { kind, views: cands };
 	const add = (v: View | undefined) => {
 		if (!v || v.kind === "full") return;
 		if (v.chars > full.chars * P.minShrink) return;
@@ -569,6 +571,7 @@ export function relevantView(text: string, kind: ContentKind, blocks: Block[], e
 export async function buildCandidatesAsync(toolName: string, args: unknown, text: string, terms: string[], params: Partial<ViewParams> = {}): Promise<Candidates & { blocks?: Block[] }> {
 	const minShrink = params.minShrink ?? DEFAULT_VIEW_PARAMS.minShrink;
 	const base = buildCandidates(toolName, args, text, terms, params);
+	if (base.views.length < 2) return base; // nothing to choose from (e.g. the agent's own edit/write results)
 	if (base.kind === "command") {
 		const P = { ...DEFAULT_VIEW_PARAMS, ...params };
 		const blocks = base.views.some((v) => v.kind === "sections") ? splitSections(text, P.sectionMinLines, P.sectionMaxBlocks, P.sectionChunkLines) : [];

@@ -10,8 +10,10 @@ view descriptions, thresholds and view parameters. The code that builds views is
 `objective = saved% − 5 × edit-miss% − 2 × quote-miss% − 1 × ref-miss%`, measured on real OpenHands trajectories:
 
 - **saved%**: tokens not sent across all large tool results (≥ presendMinTokens).
-- **edit-miss%**: among large `read` results that the agent later edited (before re-reading the file), the share where the
-  edit's first old-text line was not in the view. This is the harm metric; keep it near 0.
+- **edit-miss%**: among large `read` (or bash file display) results that the agent later edited (within 12 assistant
+  messages, before re-reading the file), the share where the edit's first old-text line was not in the view. This is the
+  harm metric and it is weighted 5×; on the 500-trajectory slice (46 editable results) the outline-first code policy
+  scored 17 % here and lost to the `gate` policy despite saving 3 points more. Never propose `presendCodePolicy: "outline"`.
 - **quote-miss%**: share of results where the agent's next message quotes a 40+ char line that only exists in the omitted part.
 - **ref-miss%**: share of results where the agent's next two steps use an identifier that only existed in the omitted part
   (not in the view, the task, its own reasoning or the tool call): it learned something from what we dropped.
@@ -36,7 +38,7 @@ Most command results that are still sent full are `grep -A/-B` context output an
 {
   "name": "short-name",
   "hypothesis": "one sentence on why this should help",
-  "config": { "presendNeedsFullAbove": 0.5, "presendFullMassAbove": 0.5, "presendMinConfidence": 0, "presendExpandAbove": 0.5, "presendMinTokens": 1200, "presendCommandNeedsFullAbove": 0.65, "presendCommandPolicy": "sections", "presendSectionExpandAbove": 0.5, "presendSectionFloor": 0.3 },
+  "config": { "presendNeedsFullAbove": 0.5, "presendFullMassAbove": 0.5, "presendMinConfidence": 0, "presendExpandAbove": 0.5, "presendMinTokens": 1200, "presendCommandNeedsFullAbove": 0.65, "presendCodePolicy": "gate", "presendCommandPolicy": "sections", "presendSectionExpandAbove": 0.5, "presendSectionFloor": 0.3 },
   "prompts": {
     "viewInstructions": "...", "viewDescriptions": { "signals": "...", "outline": "..." },
     "needsFullInstructions": "...", "needsFullTrue": "...", "needsFullFalse": "...",

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildCandidates, buildCandidatesAsync, sectionsView, splitSections } from "../src/views.ts";
 import { buildPresendState, decideView, expandRelevantBlocks, MockPresend } from "../src/presend.ts";
@@ -87,5 +88,24 @@ describe("command sections policy and expansion", () => {
 		expect(headers!.view.included).toEqual(sections.included);
 		// not applicable for other command views
 		expect(await expandRelevantBlocks(new MockPresend(), state, big, cands, cands.views[0], 0.5)).toBeUndefined();
+	});
+});
+
+describe("edit results and outline without blocks", () => {
+	const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+	it("never reduces the agent's own edit or write results", () => {
+		expect(buildCandidates("edit", { path: "src/categories.js" }, code, []).views.map((v) => v.kind)).toEqual(["full"]);
+		expect(buildCandidates("write", { path: "src/categories.js" }, code, []).views.map((v) => v.kind)).toEqual(["full"]);
+		expect(buildCandidates("read", { path: "src/categories.js" }, code, []).views.length).toBeGreaterThan(1);
+		return buildCandidatesAsync("edit", { path: "src/categories.js" }, code, []).then((c) => expect(c.views.map((v) => v.kind)).toEqual(["full"]));
+	});
+	it("outline-first needs expandable blocks; without them code goes full", async () => {
+		const cfg = { presendNeedsFullAbove: 0.5, presendFullMassAbove: 0.5, presendMinConfidence: 0, presendCodeNeedsFullAbove: 0.5, presendCommandNeedsFullAbove: 0.65, presendCodePolicy: "outline" as const };
+		const answer = { choice: "outline" as const, probabilities: { full: 0.2, outline: 0.8 }, confidence: 0.8, needsFull: 0.2 };
+		const withBlocks = await buildCandidatesAsync("read", { path: "src/categories.js" }, code, []);
+		expect(withBlocks.blocks!.length).toBeGreaterThanOrEqual(2);
+		expect(decideView(answer, withBlocks, cfg).kind).toBe("outline");
+		const noBlocks = { ...withBlocks, blocks: undefined };
+		expect(decideView(answer, noBlocks, cfg).kind).toBe("full");
 	});
 });

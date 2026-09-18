@@ -359,9 +359,33 @@ Reading: the holdout objective prefers raising the code threshold, but the holdo
 
 The scorer already checks edits of files read through bash within the next 12 assistant messages, excluding re-reads, so the edit-miss is a usable training signal for that lever; what is missing is volume: one edit-miss in the Astra sessions and none on the holdout.
 
+## More data: 500 more trajectories, and the code policy flips (2026-09-19)
+
+The holdout had 15 editable code results and zero edit-misses at every setting, so it could not rank anything that touched code. `eval/bench/fetch.sh` now downloads 1300 trajectories (rows 0-199 train, 200-299 the old holdout, **300-799 the large holdout**: 3350 large results, 11.7M tokens, 46 editable; 800-1299 untouched reserve). Runs take about 20 minutes and 5k jev calls each; summaries in `eval/bench/large/`.
+
+**The large slice contradicts the small one.** The outline-first code policy, default since the first benchmark night on the strength of 0/13 edit-misses, misses 8 of 46 edits there:
+
+| variant (large slice) | saved | edit-miss | quote-miss | ref-miss | objective |
+|---|---|---|---|---|---|
+| outline-first, code expand 0.5 (old default) | 81.7 % | 8/46 (17.4 %) | 12 | 86 | −8.5 |
+| outline-first, code expand 0.65 | 82.9 % | 11/46 (23.9 %) | 12 | 95 | −40.2 |
+| outline-first, code expand 0.35 | 80.5 % | 4/46 (8.7 %) | 10 | 80 | 34.0 |
+| gate policy, code expand 0.5 | 78.3 % | 2/46 (4.3 %) | 10 | 76 | 53.7 |
+| outline-first + the two rules below | 81.4 % | 7/42 (16.7 %) | 12 | 87 | −5.3 |
+| gate + the two rules | 78.3 % | 2/42 (4.8 %) | 11 | 78 | 51.5 |
+| **gate + rules + edit results excluded from scoring (new default)** | 79.0 % | 2/26 (7.7 %) | 9 | 74 | 37.7 |
+
+What the eight misses were (`expandProbs` per row made this readable): one outline of a test file with no tree-sitter blocks, edited at the very next step; one result of the agent's own `edit` tool, whose echoed file it kept editing; six `relevant` views where the edited block scored 0.15 to 0.49 and the edit came 11 or 12 assistant messages later, with no re-read in between. No bash re-read either: the scorer's window is right, the agent really edited from what it had read. Two rules came out of the first two: the agent's own `edit`/`write` results are never reduced (`buildCandidates` returns only full, and the async builder no longer re-adds a tree-sitter outline), and outline-first requires at least two expandable blocks. They fix their two cases and nothing else; the six late edits are the outline policy itself, and no threshold reaches them: 0.35 halves code savings and still leaves four.
+
+So the code policy is now `gate` (jev's needs-full and full-mass gates decide; a chosen view still gets block expansion). It saves 3 points less on the large slice and 4 on the old holdout (77.8 % / objective 74.3 there, 0/7 edit-miss), and it is the first setting with a positive objective on the Astra sessions: 30.8 % saved on 60 large results, 0/9 edit-miss, 1 ref-miss, objective 29.1. Code from Astra's bash displays now goes full (0 % saved on 13 results); the 45 % on command output carries it.
+
+The excluded edit results also shrink the editable count from 46 to 26, which is why the last row's rate is higher than the row above it with the same two misses.
+
+**Lesson for the research loop.** Every conclusion about code views drawn from the 100-trajectory holdout was drawn from 13 to 15 editable results, and the one that mattered was wrong. Editable results are the scarce evidence; the large slice has 26 after excluding edit echoes, the reserve 800-1299 should have a similar number, and autoresearch should be scored on the large slice for any variant that touches code, even at 20 minutes per evaluation.
+
 ## What to try next
 
 1. **Pre-send judgment**: built, see above. Next: let the autoresearch researcher write view builders (one per content kind, sandboxed, verified as strict line subsets) instead of only prompt text and thresholds; three rounds of the latter transferred nothing, every code-built view did. And a structural rule for the second step: expand blocks referenced by an expanded block or named in the task.
 2. **Two-turn evidence** before a forget: only forget once the agent has produced two later assistant messages without touching the item, or lower `JEV_MEMORY_FORGET_BELOW` to 0.15.
-3. **Run the replay harness on real, long pi sessions** from `~/.pi/agent/sessions` once there are some; every number above comes from synthetic tasks under 35 calls.
+3. **Run the replay harness on real, long pi sessions** from `~/.pi/agent/sessions` as they accumulate (the Astra sessions are the first); and score code-touching variants on the 300-799 slice, not the 100-trajectory holdout.
 4. Tune `JEV_MEMORY_BUDGET_FRACTION` (0.5 assumes about 18 more calls will follow; 0.25 assumes 36) or trigger on context percentage instead, so budget mode actually fires in hour-long sessions before compaction does.

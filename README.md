@@ -28,7 +28,7 @@ files have that type. Pipelines may only filter stdin with recognized options. R
 | view | for | keeps |
 |---|---|---|
 | `outline` | code, prose | imports, exports, signatures, headings, doc comments |
-| `relevant` | code | outline plus the full bodies of the blocks jev says the agent will need (second jev step); the default for source files |
+| `relevant` | code | outline plus the full bodies of the blocks jev says the agent will need (second jev step) |
 | `focus` | anything | lines mentioning identifiers from the task and the tool call, with context |
 | `signals` | command output | errors, warnings, failing tests, summary lines, the tail |
 | `sample` | tabular or log-like data | header, a dozen rows, the count |
@@ -45,8 +45,8 @@ are split into their members. Other languages fall back to regex heuristics that
 
 jev answers two questions over the task, the assistant's text before the call (not hidden thinking), and a preview of
 each view: *which view is the smallest that still suffices* (Choice) and *will the next step need the exact full text*
-(Noul). Thresholds normally decide when to send full text. For code, the default `outline` policy bypasses those gates
-when an outline is available, then asks jev which block bodies to expand. If the expanded view reaches 90 % of the
+(Noul). Thresholds decide when to send full text. For code, when a reduced view is chosen (or with the `outline`
+policy, always), a second step asks jev which block bodies to expand. If the expanded view reaches 90 % of the
 original character count, full text is sent instead.
 
 When a result is compressed, its full output is kept in `details` (persisted in the session, not included in the model
@@ -135,8 +135,8 @@ session totals. Set `JEV_MEMORY_UI=0` to keep pi's own tool rendering. Every cal
 | `JEV_MEMORY_PRESEND_COMMAND_POLICY` | `sections` | when jev picks full for command output but needs-full is under the command threshold, send the section headers and let the second step expand the needed sections (full again if that reaches 90 %). `gate`: jev's view choice stands. |
 | `JEV_MEMORY_PRESEND_SECTION_EXPAND_ABOVE` | `0.5` | expand a section of command output when P(needed) exceeds this |
 | `JEV_MEMORY_PRESEND_SECTION_FLOOR` | `0.3` | send full when no section of command output reaches this probability (the expansion step could not tell, typical for docs read for orientation); `0` allows headers alone |
-| `JEV_MEMORY_PRESEND_CODE_POLICY` | `outline` | prefer an available code outline, then expand selected bodies; fall back to full if expansion reaches 90 % of original size. `gate`: use needs-full/full-mass gates instead. |
-| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold; bypassed when outline policy finds an outline |
+| `JEV_MEMORY_PRESEND_CODE_POLICY` | `gate` | jev's needs-full and full-mass gates decide between full and a view; when a view is chosen, selected block bodies are expanded. `outline`: always send an outline plus expanded bodies (saves more, but 17 % of later edits missed their block on 500 real trajectories). |
+| `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold |
 | `JEV_MEMORY_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 disables the check); bypassed by outline-first code selection |
 | `JEV_MEMORY_TRIM_HEAD` / `_TRIM_TAIL` | `15` / `15` | lines retained at each end for post-send trimming |
 | `JEV_MEMORY_STATE_HEAD` / `_STATE_TAIL` | `2500` / `800` | maximum output characters in post-send classifier excerpts |
@@ -169,6 +169,7 @@ node --import tsx eval/replay.ts <session.jsonl|dir>   # offline: classify a rec
 node --import tsx eval/presend-replay.ts <dir>          # offline: pre-send views vs what the agent did next (edit/quote misses)
 node --import tsx eval/action-graph.ts                  # procedural graph mined from runs, jev as guidance model
 node --import tsx eval/bench/run.ts --from 200 --to 300 # pre-send benchmark on 100 real OpenHands trajectories (holdout)
+node --import tsx eval/bench/run.ts --from 300 --to 800 # the 500-trajectory slice (46 editable code results; use it for anything that touches code views)
 node --import tsx eval/bench/autoresearch.ts --iterations 8   # let a researcher model tune prompts/thresholds on the train slice
 node --import tsx eval/generate.ts --cond baseline     # run the fixture tasks with pi headless
 node --import tsx eval/generate.ts --cond jev
