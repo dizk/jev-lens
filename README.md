@@ -27,6 +27,10 @@ hook, code builds candidate **views** that are strict subsets of the output, wit
 | `sample` | tabular or log-like data | header, a dozen rows, the count |
 | `head_tail` | anything | first and last lines |
 
+Code structure comes from tree-sitter (grammars from `@vscode/tree-sitter-wasm` plus `@binclusive/tree-sitter-kotlin-wasm`):
+TypeScript, TSX, JavaScript, Kotlin, Java, Rust, Python, Go, C, C++, C#, Ruby, PHP, Bash, CSS. Large classes and impl blocks
+are split into their members. Other languages fall back to regex heuristics that know the common declaration keywords.
+
 jev answers two questions over the task, the agent's reasoning before the call, and a preview of each view: *which view
 is the smallest that still suffices* (Choice) and *will the next step need the exact full text* (Noul). Full wins on any
 doubt. The full output is kept in the result's `details` (persisted in the session, never sent) and served by a `recall`

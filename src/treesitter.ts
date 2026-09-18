@@ -18,6 +18,19 @@ const LANG_BY_EXT: Record<string, string> = {
 	".py": "python", ".pyx": "python", ".go": "go", ".rs": "rust", ".java": "java", ".rb": "ruby",
 	".c": "c", ".h": "c", ".cc": "cpp", ".cpp": "cpp", ".hpp": "cpp", ".cs": "c-sharp", ".php": "php",
 	".sh": "bash", ".bash": "bash", ".css": "css",
+	".kt": "kotlin", ".kts": "kotlin",
+};
+
+/** Extra grammar packages: language → wasm path resolver (the VS Code bundle has no Kotlin). */
+const EXTRA_WASM: Record<string, () => string | undefined> = {
+	kotlin: () => {
+		try {
+			const dir = dirname(require.resolve("@binclusive/tree-sitter-kotlin-wasm/package.json"));
+			const { readdirSync } = require("node:fs") as typeof import("node:fs");
+			const walk = (d: string): string | undefined => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory() && f.name !== "node_modules") { const r = walk(p); if (r) return r; } else if (f.name.endsWith(".wasm")) return p; } return undefined; };
+			return walk(dir);
+		} catch { return undefined; }
+	},
 };
 
 /** Node types that count as top-level blocks, per language family. */
@@ -29,6 +42,7 @@ const BLOCK_TYPES = new Set([
 	"type_item", "func_literal", "method_declaration", "type_declaration", "var_declaration", "const_declaration",
 	"class_specifier", "struct_specifier", "namespace_definition", "template_declaration", "preproc_function_def",
 	"function_signature", "singleton_method", "module", "class", "method", "object_declaration", "property_declaration",
+	"companion_object", "constructor_declaration", "record_declaration", "annotation_type_declaration", "macro_definition", "extern_crate_declaration",
 ]);
 const HEADER_TYPES = new Set(["import_statement", "import_declaration", "import_from_statement", "package_clause", "package_declaration", "use_declaration", "preproc_include", "require_call", "using_directive", "comment", "expression_statement", "attribute_item", "mod_item"]);
 
@@ -68,8 +82,8 @@ async function language(name: string) {
 			const mod = await init();
 			const dir = wasmDir();
 			if (!mod || !dir) return undefined;
-			const file = join(dir, `tree-sitter-${name}.wasm`);
-			if (!existsSync(file)) return undefined;
+			const file = EXTRA_WASM[name]?.() ?? join(dir, `tree-sitter-${name}.wasm`);
+			if (!file || !existsSync(file)) return undefined;
 			try { return await mod.Language.load(file); } catch { return undefined; }
 		})());
 	}
@@ -116,14 +130,15 @@ export async function treeSitterBlocks(path: string, text: string, maxBlocks = 4
 		}
 		// Multi-line top-level assignments (config dicts, tables, constants) are blocks too.
 		const isBigAssignment = (node.type === "expression_statement" || node.type === "assignment") && endLine - startLine >= 3;
-		const isBlock = (BLOCK_TYPES.has(node.type) || isBigAssignment) && endLine > startLine;
+		// one-line declarations (type aliases, Kotlin data classes, Rust consts) are blocks too: they belong in the outline
+		const isBlock = BLOCK_TYPES.has(node.type) || isBigAssignment;
 		if (!isBlock) { pendingComment = undefined; if (blocks.length === 0) headerEnd = endLine; continue; }
 		const from = (pendingComment ?? startLine) + 1;
 		pendingComment = undefined;
 		const sig = lines[startLine].trim().slice(0, 120);
 		// Large classes: expose their methods as blocks so the second step can pick individual bodies.
 		const body = node.namedChildren.find((n) => n && (n.type === "class_body" || n.type === "block" || n.type === "declaration_list" || n.type === "field_declaration_list"));
-		const methods = body ? body.namedChildren.filter((n) => n && (n.type === "method_definition" || n.type === "function_definition" || n.type === "method_declaration" || n.type === "decorated_definition" || n.type === "function_item")) : [];
+		const methods = body ? body.namedChildren.filter((n) => n && (n.type === "method_definition" || n.type === "function_definition" || n.type === "method_declaration" || n.type === "constructor_declaration" || n.type === "decorated_definition" || n.type === "function_item" || n.type === "function_declaration" || n.type === "companion_object" || n.type === "property_declaration")) : [];
 		if (endLine - startLine > 40 && methods.length >= 2) {
 			blocks.push({ name: sig, from, to: methods[0]!.startPosition.row });
 			for (let k = 0; k < methods.length; k++) {
@@ -159,7 +174,11 @@ export async function treeSitterOutline(path: string, text: string): Promise<num
 	const idx: number[] = [];
 	const lines = text.split("\n");
 	for (const b of blocks) {
-		if (b.name.startsWith("(header")) { for (let i = b.from - 1; i < b.to; i++) if (/^\s*(import|from|require|use|package|#include|using)\b/.test(lines[i]) || /^\s*export\s+(const|let|var)\b/.test(lines[i])) idx.push(i); continue; }
+		if (b.name.startsWith("(header")) {
+			// imports plus any one-line declarations (Kotlin data classes, type aliases, constants) that were too short to be blocks
+			for (let i = b.from - 1; i < b.to; i++) if (/^\s*(import|from|require|use|package|#include|using)\b/.test(lines[i]) || /^(export\s+)?(const|let|var|val|type|typealias|data class|sealed class|enum class|class|interface|object|fun|def|pub|static|final)\b/.test(lines[i])) idx.push(i);
+			continue;
+		}
 		// the signature line is the first non-comment line of the block
 		for (let i = b.from - 1; i < b.to; i++) { if (!/^\s*(\/\/|\/\*|\*|#|"""|''')/.test(lines[i]) && lines[i].trim()) { idx.push(i); break; } }
 	}
