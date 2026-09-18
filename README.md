@@ -30,15 +30,21 @@ full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slic
 ## What the numbers say
 
 We did not guess the defaults; we measured them on 500 real agent trajectories (OpenHands on SWE-rebench, 3300 large
-tool results, 11.6 million tokens) and on our own pi sessions. The research log is STATUS.md; the headlines:
+tool results, 11.6 million tokens) and on our own day-to-day pi sessions. The research log is STATUS.md; the headlines:
 
 | | |
 |---|---|
-| **79 % fewer tokens** sent for large tool results across the 500 trajectories | 11.6M → 2.4M |
+| **79 % fewer tokens** sent for large tool results across the 500 benchmark trajectories | 11.6M → 2.4M |
 | **88 % on command output** (test runs, grep, build logs), 58 % on docs, 47 % on listings, 31 % on code | per kind |
+| **31 % of large-result tokens** in our own sessions with gpt-6-astra, which reads code through `cat` and runs few tests | real use |
 | **2 of 26 later edits** missed their block; 0.3 % of results had a dropped line quoted; 2.2 % had a dropped identifier used | the harm side |
 | **8 % lower cost, 17 % smaller final prompt, same pass rate, zero recalls** on live end-to-end runs where big files get read | pi headless, 3 runs each |
-| **31 % of large-result tokens** cut in real day-to-day sessions with gpt-6-astra | our own `~/.pi/agent/sessions` |
+
+Read the two savings numbers together. The benchmark agent spends its output budget on pytest runs and grep, which
+compress to almost nothing; an agent that mostly reads source code sits closer to the code number, because code is
+the one thing we refuse to compress unless jev is confident. And both are shares of *large tool results*: over a
+whole session, with the system prompt, the conversation and every small result counted, the footer will show a lower
+percentage. What you save depends on what your agent reads.
 
 Three things we learned that shaped the design:
 
