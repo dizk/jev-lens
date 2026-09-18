@@ -144,7 +144,7 @@ New machinery built for this: tree-sitter outlines and block boundaries (`@vscod
 | + test-id index in testlog, task terms in tree, stricter ref-miss | 65.1 % | 0/13 | 4 (0.6 %) | 12 (1.8 %) | 62.2 | signals 268, testlog 142, full 153, relevant 42, outline 30, tree 29 |
 | + code needs-full 0.35, focus→outline for code | 63.5 % | 0/13 | 4 (0.6 %) | 11 (1.6 %) | 60.7 | code savings fell to 18 % |
 | **current default** (code threshold back to 0.5, focus→outline kept, big assignments as blocks) | 64.7 % | 0/13 | 4 (0.6 %) | 12 (1.8 %) | 61.7 | signals 268, testlog 143, full 157, relevant 46, tree 29, outline 26 |
-| + autoresearch best prompt (round 2) | ROUND2_ROW |
+| + autoresearch best prompt (round 2, on the current default) | 64.9 % | 0/13 | 4 (0.6 %) | 13 (1.9 %) | 61.8 | same view mix as the default |
 
 The last three rows trade about 4 points of savings for halving ref-miss: the `testlog` view now keeps a capped index of
 test ids (agents pick one to re-run), and `tree` keeps entries matching task terms. Under the objective's weights that
@@ -171,7 +171,12 @@ the holdout row above is the real test, and there the round-1 winner did **not**
 default prompt, within noise. The reason is visible in the history: round 1 ran against the older view set, and its
 gain came from pushing command output towards `signals`; the `testlog` and `tree` views added meanwhile capture the same
 tokens by construction. Lesson: on this problem, new code-built views moved the number (55.9 → 69.3 % on holdout with
-zero edit-misses), prompt wording did not. Round 2 of the loop (new views, corrected ref-miss) is in `research/round2/`. The researcher only touches text and numbers; the view builders are code
+zero edit-misses), prompt wording did not. Round 2 of the loop (new views, corrected ref-miss, 60 training trajectories, 8 iterations, one kept: train 63.8 → 68.5)
+is in `research/round2/`; on the holdout its winner scores 64.9 % / objective 61.8 against 64.7 % / 61.7 for the
+default, again within noise. Two rounds, same lesson: with jev's ±0.2 run-to-run variance and a 50 to 60 trajectory
+training slice, prompt-wording gains of 5 to 10 points on train are noise-level on holdout. The loop is still useful as
+a regression guard and for parameter sweeps (thresholds, `testIds`, context sizes), and two of its discards were
+informative: every variant that pushed code towards `focus` or `relevant` produced 25 % edit-miss on train. The researcher only touches text and numbers; the view builders are code
 and stay fixed within a loop.
 
 ## Procedural graph prototype (`eval/action-graph.ts`)
