@@ -1,108 +1,31 @@
 # pi-jev-lens
 
 A [pi](https://github.com/earendil-works/pi-mono) extension that **compresses large tool results before they reach the
-model**, using [jev](https://docs.typesafe.ai) (TypeSafe's System One model) to select useful views and code blocks.
-The agent gets a smaller result now and can use `recall` to retrieve omitted text when needed.
+model**. [jev](https://docs.typesafe.ai), TypeSafe's System One model, picks which view of the output the agent gets:
+an outline, the relevant code blocks, the failing tests, the matching sections. The full text stays one `recall` away.
 
-**Pre-send compression is the main cost lever.** Avoiding the first send saves uncached input tokens without rewriting
-an already-cached message. Pruning later can free context, but may cost more by invalidating part of the prompt cache.
-
-The extension does one thing by default: **pre-send compression**, sending outlines, relevant code blocks or filtered
-output instead of the entire result, with the full text one `recall` away. A second layer, **cache-aware post-send
-pruning** (keep, trim or stub results the agent has already acted on), is kept in the code but off by default:
-measured on real sessions it is not a cost win under prompt-cache pricing, see STATUS.md.
-
-## Pre-send compression (the cost lever)
-
-Large text tool results (default: at least 1200 estimated tokens, estimated as characters / 4) are considered for
-compression in pi's `tool_result` hook. Results containing images and calls to `recall` are excluded. Code builds
-candidate **views** from the output, with line numbers and omission markers. Views of code and prose preserve
-retained lines exactly, so edits copied from a view still match the file; views of command output, listings and
-data shorten decorative bars, long runs of spaces and very long lines. Full text is still sent when no suitable reduced view
-is available or classification fails. A conservative subset of bash file displays (`cat a.py b.py`,
-`sed -n '1,80p' x.ts`, line-limited `head`/`tail`, brace groups and globs) gets code or prose views when all displayed
-files have that type. Pipelines may only filter stdin with recognized options. Redirections, substitutions, modifying
-`sed` scripts, mixed code/non-code files and unsupported syntax retain ordinary command handling:
-
-| view | for | keeps |
-|---|---|---|
-| `outline` | code, prose | imports, exports, signatures, headings, doc comments |
-| `relevant` | code | outline plus the full bodies of the blocks jev says the agent will need (second jev step) |
-| `focus` | anything | lines mentioning identifiers from the task and the tool call, with context |
-| `signals` | command output | errors, warnings, failing tests, summary lines, the tail |
-| `sample` | tabular or log-like data | header, a dozen rows, the count |
-| `head_tail` | anything | first and last lines |
-| `testlog` | test output | failures, assertions, tracebacks and summaries |
-| `tree` | directory listings | a sample of entries per directory, with omission counts |
-| `matches` | search output | first matches per file, with omission counts |
-| `log` | repetitive output | representative repeated lines, errors and the tail |
-| `sections` | command output | the first line of every section (grep match groups, JSON keys, headings, `COMMAND:`-style markers, paragraphs); a second jev step puts back the sections the agent needs, giving `relevant` |
-
-Code structure comes from tree-sitter (grammars from `@vscode/tree-sitter-wasm` plus `@binclusive/tree-sitter-kotlin-wasm`):
-TypeScript, TSX, JavaScript, Kotlin, Java, Rust, Python, Go, C, C++, C#, Ruby, PHP, Bash, CSS. Large classes and impl blocks
-are split into their members. Other languages fall back to regex heuristics that know the common declaration keywords.
-
-jev answers two questions over the task, the assistant's text before the call (not hidden thinking), and a preview of
-each view: *which view is the smallest that still suffices* (Choice) and *will the next step need the exact full text*
-(Noul). Thresholds decide when to send full text. For code, when a reduced view is chosen (or with the `outline`
-policy, always), a second step asks jev which block bodies to expand. If the expanded view reaches 90 % of the
-original character count, full text is sent instead.
-
-When a result is compressed, its full output is kept in `details` (persisted in the session, not included in the model
-prompt) and served by a `recall` tool using an id, a line range or a pattern. This storage covers pre-send compression,
-not results that were only pruned post-send; those must be obtained by re-running the original tool. Every recall is
-logged as feedback on the reduced view. Set `JEV_LENS_PRESEND=0` to turn pre-send compression off.
-
-## Post-send pruning (the context-budget layer, off by default)
-
-Enable with `JEV_LENS_MODE=budget` (or `rolling` / `batch`). Off, no post-send classification runs and no jev calls are made for it.
-
-This is a secondary pass, not the source of the initial pre-send savings. It classifies the result the agent saw
-(which may already be compressed) after the agent has reacted to it:
-
-| decision | what happens in later prompts |
-|---|---|
-| **keep** | leave the result unchanged, including any pre-send compression |
-| **trim** | keep the head and tail; drop the middle |
-| **forget** | replace the result with a one-line stub; re-run the tool if needed |
-
-Prompt caches match on an exact prefix. Any edit to an already-sent message invalidates the cache from that point on.
-The extension limits repeated rewrites using persisted decisions:
-
-1. **Classify after reaction.** Text-only tool results of at least `JEV_LENS_MIN_TOKENS` are queued for classification after
-   the next assistant message supplies evidence of what happened next. Results still buffered at agent end are
-   classified without that reaction. Results with an existing decision or an in-flight classification are skipped.
-2. **Apply, then freeze the decision.** The `context` hook waits briefly for in-flight classifications and applies
-   pending decisions when the selected mode permits. Decisions are persisted and restored at session start; applied
-   decisions are re-applied on later calls. Transforms remain identical for unchanged input and configuration
-   (changing trim settings can change the rendered text).
-3. **Choose when to rewrite.** `budget` (default) applies pending prunes when their savings meet both the configured
-   minimum and a fraction of the tail they would rewrite. `rolling` applies them at the next context hook; `batch`
-   waits for a cold cache. All modes allow application after the configured idle TTL, and compaction marks pending
-   decisions as applied.
-
-There is no monotonic cut boundary: a late classification can still rewrite an older result after a newer decision
-has been applied. Persisted decisions prevent repeated reclassification, but do not guarantee an unchanged cache prefix.
-
-Tool results are never removed, only rewritten, because every `function_call` must keep a matching output.
+Avoiding the first send is what saves money: an uncached input token is paid in full, and once sent, a result sits in
+the cached prefix at a tenth of the price for the rest of the session. On 500 real agent trajectories the defaults
+send 79 % fewer tokens for large tool results, with 2 of 26 later edits missing their block (details in
+[Evaluation](#evaluation) and STATUS.md).
 
 ## Install
 
 ```sh
-pi install npm:pi-jev-lens            # from npm
-pi install git:github.com/dizk/pi-jev-lens   # or straight from GitHub
+pi install npm:pi-jev-lens                    # from npm
+pi install git:github.com/dizk/pi-jev-lens    # or straight from GitHub
 ```
 
-The classifier is [jev](https://typesafe.ai), TypeSafe's System One model, so it needs a TypeSafe API key
-(get one at [console.typesafe.ai](https://console.typesafe.ai)). Three ways to provide it, in the order they are tried:
+jev needs a TypeSafe API key (get one at [console.typesafe.ai](https://console.typesafe.ai)). Three ways to provide it,
+in the order they are tried:
 
 1. `TYPESAFE_API_KEY` in the environment.
 2. `/jev-lens key` inside pi: prompts for the key (or `/jev-lens key ts_...`) and stores it in
    `~/.pi/agent/jev-lens.json`, readable only by you. jev is active from the next tool result, no restart.
 3. A `.env` file next to the installed package (development).
 
-Without a key the extension warns at startup and runs a mock classifier that compresses nothing.
-For development, clone the repo and load it directly:
+Without a key the extension warns at startup and runs a mock classifier that compresses nothing. For development,
+clone the repo and load it directly:
 
 ```sh
 git clone https://github.com/dizk/pi-jev-lens.git && cd pi-jev-lens && npm install
@@ -110,92 +33,129 @@ echo 'TYPESAFE_API_KEY=...' > .env
 pi -e ./index.ts
 ```
 
-Inside pi: `/jev-lens` shows stats (and where the key comes from), `/jev-lens key` stores the key, `/jev-lens list` lists the latest 200 pre-send-compressed tool results with tokens
-before and after, `/jev-lens diff [n]` opens an overlay for the n-th latest one showing the original output with the
-lines the model did not get marked `−` (press `t` to switch to exactly what was sent, `Esc` to close),
-`/jev-lens decisions` lists post-send decisions with probabilities (when post-send is on).
-In the transcript, a compressed `read`/`bash`/`grep`/`find`/`ls` result shows a header line
-`⌁ jev-lens outline · 179 of 1524 tokens (−88 %)` and, expanded (ctrl+e), the text the model saw. The footer shows
-session totals, leading with the share of the session's input tokens jev kept out of the prompt:
-`jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls)` (with post-send on, a `pruned` part follows). The share is
-cut / (sent + cut), where sent is the provider's own input plus cache-read counts over all calls and cut is what every
-compressed or pruned result saved on every call it was part of, so a result compressed early counts on each later call. Set `JEV_LENS_UI=0` to keep pi's own tool rendering. Every call is logged to
-`<project>/.pi/jev-lens.log` (JSON lines).
+## How it works
+
+Every text tool result of at least 1200 estimated tokens (characters / 4) passes through pi's `tool_result` hook
+before it is stored or sent. Code builds candidate **views**: strict subsets of the output, with line numbers and
+omission markers, never generated text.
+
+| view | for | keeps |
+|---|---|---|
+| `outline` | code, prose | imports, exports, signatures, headings, doc comments |
+| `relevant` | code, command output | outline or section headers plus the full bodies jev says the agent will need (second jev step) |
+| `sections` | command output | the first line of every section: grep match groups, JSON keys, headings, `COMMAND:`-style markers, paragraphs |
+| `signals` | command output | errors, warnings, failing tests, summary lines, the tail |
+| `testlog` | test output | failures, assertions, tracebacks and summaries |
+| `matches` | search output | first matches per file, with omission counts |
+| `log` | repetitive output | representative repeated lines, errors and the tail |
+| `tree` | directory listings | a sample of entries per directory, with omission counts |
+| `focus` | anything | lines mentioning identifiers from the task and the tool call, with context |
+| `sample` | tabular or log-like data | header, a dozen rows, the count |
+| `head_tail` | anything | first and last lines |
+
+jev then answers two questions over the task, the assistant's text before the call and a preview of each view:
+*which view is the smallest that still suffices* (a Choice) and *will the next step need the exact full text* (a
+yes/no). When an outline or `sections` view is chosen, a second request asks, per block or section, whether the agent
+will need its body, and those bodies are put back. If that reaches 90 % of the original, full text is sent instead.
+
+What makes it safe to edit from a view:
+
+- Views of code and prose keep every retained line exactly, so an edit whose old text was copied from the view still
+  matches the file. Views of command output shorten decorative bars and very long lines.
+- Files the agent reads through bash (`cat a.py b.py`, `sed -n '1,80p' x.ts`, `head`, brace groups, globs) are typed as
+  code or prose and get the same views as `read`. Anything mixed with other commands stays command output.
+- The agent's own `edit` and `write` results are never reduced.
+- Code is sent full unless jev is confident a view suffices (`gate` policy). The always-outline policy saves more but
+  missed 17 % of later edits on real trajectories, so it is opt-in.
+
+Code structure comes from tree-sitter (grammars from `@vscode/tree-sitter-wasm` plus `@binclusive/tree-sitter-kotlin-wasm`):
+TypeScript, TSX, JavaScript, Kotlin, Java, Rust, Python, Go, C, C++, C#, Ruby, PHP, Bash, CSS. Large classes are split
+into their members. Other languages fall back to regex heuristics.
+
+**Recall.** When a result is compressed, its full output is kept in the result's `details` (persisted in the session,
+never sent to the model). The footer names a `recall` tool that serves it back by id, line range or pattern. Every
+recall is logged as feedback that a view was too small.
+
+## In pi
+
+The footer shows the share of the session's input tokens jev kept out of the prompt, and what it did:
+
+```
+jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls)
+```
+
+The share is cut / (sent + cut): sent is the provider's own input plus cache-read counts over all calls, cut is what
+every compressed result saved on every call it was part of.
+
+In the transcript a compressed result shows a header like `⌁ jev-lens outline · 179 of 1524 tokens (−88 %)` and,
+expanded (ctrl+e), exactly what the model saw. Commands:
+
+- `/jev-lens` stats, and where the key comes from
+- `/jev-lens list` the latest 200 compressed results with tokens before and after
+- `/jev-lens diff [n]` overlay of the n-th latest: the original with the lines the model did not get marked `−`
+  (`t` switches to what was sent, `Esc` closes)
+- `/jev-lens key` store the API key
+
+Every decision is logged to `<project>/.pi/jev-lens.log` (JSON lines). `JEV_LENS_UI=0` keeps pi's own tool rendering.
 
 ### Configuration (environment)
 
 | variable | default | meaning |
 |---|---|---|
-| `JEV_LENS_MODE` | `off` | post-send pruning: `off`, `rolling`, `batch` or `budget` (see above) |
-| `JEV_LENS_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` | `0.5` / `1000` | budget mode: apply when pending prunes remove at least this share of the tail they rewrite, and at least this many tokens |
-| `JEV_LENS_FORGET_BELOW` | `0.25` | P(needed) below this → forget |
-| `JEV_LENS_TRIM_BELOW` / `_TRIM_ABOVE` | `0.5` / `0.6` | P(needed) below the first and P(outcome only) above the second → trim |
-| `JEV_LENS_MIN_TOKENS` | `150` | smaller tool results are never touched |
-| `JEV_LENS_CLASSIFY_WAIT_MS` | `2500` | maximum wait for in-flight classification at context, agent end and shutdown |
-| `JEV_LENS_CACHE_TTL_MS` | `300000` | idle longer than this counts as a cold cache |
-| `JEV_LENS_DISABLED` | unset | `1` skips pre-send compression and makes new post-send decisions `keep`; logging remains active. Previously applied decisions are still replayed. |
-| `JEV_LENS_PRESEND` | `1` | `0` turns pre-send compression off |
+| `JEV_LENS_PRESEND` | `1` | `0` turns compression off |
 | `JEV_LENS_PRESEND_MIN_TOKENS` | `1200` | smaller results are always sent in full |
 | `JEV_LENS_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
+| `JEV_LENS_PRESEND_CODE_POLICY` | `gate` | `outline`: always send an outline plus expanded bodies (more savings, more edit-misses) |
+| `JEV_LENS_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code uses the minimum of this and the general needs-full threshold |
 | `JEV_LENS_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
-| `JEV_LENS_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output; the question is phrased for edits, and test runs rarely need exact full text (+3.3 points on the benchmark, no extra misses) |
-| `JEV_LENS_PRESEND_COMMAND_POLICY` | `sections` | when jev picks full for command output but needs-full is under the command threshold, send the section headers and let the second step expand the needed sections (full again if that reaches 90 %). `gate`: jev's view choice stands. |
-| `JEV_LENS_PRESEND_SECTION_EXPAND_ABOVE` | `0.5` | expand a section of command output when P(needed) exceeds this |
-| `JEV_LENS_PRESEND_SECTION_FLOOR` | `0.3` | send full when no section of command output reaches this probability (the expansion step could not tell, typical for docs read for orientation); `0` allows headers alone |
-| `JEV_LENS_PRESEND_CODE_POLICY` | `gate` | jev's needs-full and full-mass gates decide between full and a view; when a view is chosen, selected block bodies are expanded. `outline`: always send an outline plus expanded bodies (saves more, but 17 % of later edits missed their block on 500 real trajectories). |
-| `JEV_LENS_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | code gate uses the minimum of this and the general needs-full threshold |
-| `JEV_LENS_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 disables the check); bypassed by outline-first code selection |
-| `JEV_LENS_TRIM_HEAD` / `_TRIM_TAIL` | `15` / `15` | lines retained at each end for post-send trimming |
-| `JEV_LENS_STATE_HEAD` / `_STATE_TAIL` | `2500` / `800` | maximum output characters in post-send classifier excerpts |
-| `JEV_LENS_MODEL` | `jev-latest` | classifier model |
-| `JEV_LENS_CLASSIFIER` | unset | `mock` forces deterministic classifiers without API calls |
-| `JEV_LENS_LOG` | `1` | `0` disables JSON-lines logging |
-| `JEV_LENS_UI` | `1` | `0` disables custom built-in tool rendering |
-| `JEV_LENS_VARIANT` | unset | JSON file with `config`, `prompts` and `views` overrides (also accepts autoresearch's `{ variant }` wrapper); config overrides take precedence over environment settings |
-
-`TYPESAFE_API_KEY` enables the real classifier. The extension loads `.env` from its own directory (and `src/`), not
-from the target project; existing nonempty environment values take precedence.
-
-## How jev is used
-
-Pre-send selection is one request per large tool result: a Choice over the candidate views plus a yes/no question on
-whether the next step needs the exact full text (`src/presend.ts`). When a code outline or a `sections` view is chosen,
-a second request asks, per block or section, whether the agent will need its body. jev returns probabilities, not
-generated prose: every view is assembled by code from lines of the original output.
-
-With post-send pruning on, each eligible tool result gets one more request after the agent has reacted, with two
-yes/no questions (`src/classifier.ts`): *needed* and *outcome only*. The state holds the task, the tool call, a
-head/tail excerpt of its output, and what the agent said and called next.
+| `JEV_LENS_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output |
+| `JEV_LENS_PRESEND_COMMAND_POLICY` | `sections` | when jev picks full for command output but needs-full is low, send section headers and expand the needed sections. `gate`: jev's choice stands |
+| `JEV_LENS_PRESEND_SECTION_EXPAND_ABOVE` | `0.5` | expand a section when P(needed) exceeds this |
+| `JEV_LENS_PRESEND_SECTION_FLOOR` | `0.3` | send full when no section reaches this probability (jev could not tell); `0` allows headers alone |
+| `JEV_LENS_PRESEND_MIN_CONFIDENCE` | `0` | send full below this choice confidence (0 = off) |
+| `JEV_LENS_MODEL` | `jev-latest` | jev model |
+| `JEV_LENS_CLASSIFIER` | unset | `mock` forces the deterministic classifier, no API calls |
+| `JEV_LENS_LOG` | `1` | `0` disables logging |
+| `JEV_LENS_UI` | `1` | `0` disables the custom tool rendering |
+| `JEV_LENS_VARIANT` | unset | JSON file with `config`, `prompts` and `views` overrides, as produced by the autoresearch loop |
+| `JEV_LENS_MODE` | `off` | optional post-send pruning, see below |
 
 ## Evaluation
 
+Benchmark on real OpenHands trajectories (`eval/bench/`, data fetched by `eval/bench/fetch.sh`), scored by what the
+agent actually did next: **edit-miss** (it edited a line the view had dropped), **quote-miss** (it quoted dropped text),
+**ref-miss** (it used an identifier that only existed in the dropped part). Edit-misses are weighted five times in
+the objective, and they are rare, so anything that touches code views must be scored on the 500-trajectory slice:
+
+| slice | large results | saved | edit-miss | quote-miss | ref-miss |
+|---|---|---|---|---|---|
+| 100 trajectories (rows 200-299) | 681 | 77.8 % | 0/7 | 0.6 % | 2.3 % |
+| 500 trajectories (rows 300-799) | 3296 | 79.0 % | 2/26 | 0.3 % | 2.2 % |
+
 ```sh
-npm test                                      # unit tests for views, presend, policy and ledger
-node --import tsx eval/replay.ts <session.jsonl|dir>   # offline: classify a recorded session, simulate post-send pruning
-node --import tsx eval/presend-replay.ts <dir>          # offline: pre-send views vs what the agent did next (edit/quote misses)
-node --import tsx eval/action-graph.ts                  # procedural graph mined from runs, jev as guidance model
-node --import tsx eval/bench/run.ts --from 200 --to 300 # pre-send benchmark on 100 real OpenHands trajectories (holdout)
-node --import tsx eval/bench/run.ts --from 300 --to 800 # the 500-trajectory slice (46 editable code results; use it for anything that touches code views)
-node --import tsx eval/bench/autoresearch.ts --iterations 8   # let a researcher model tune prompts/thresholds on the train slice
-node --import tsx eval/generate.ts --cond baseline     # run the fixture tasks with pi headless
-node --import tsx eval/generate.ts --cond jev
-node --import tsx eval/report.ts                       # compare conditions
+npm test                                                # unit tests, mock classifier
+node --import tsx eval/bench/run.ts --from 200 --to 300 # holdout, ~4 min
+node --import tsx eval/bench/run.ts --from 300 --to 800 # the 500-trajectory slice, ~20 min
+node --import tsx eval/presend-replay.ts <session dir>  # replay your own pi sessions from ~/.pi/agent/sessions
+node --import tsx eval/bench/autoresearch.ts --iterations 8   # a researcher model tunes prompts and thresholds
 ```
 
-`eval/fixture` is a small dependency-free JavaScript project with planted bugs; `eval/tasks/tasks.json` holds ten
-tasks (eight short, a five-part compound and an eight-part marathon), each scored by a hidden test.
+STATUS.md is the research log: every variant tried, its numbers, and why the defaults are what they are. The short
+version: new code-built views moved the numbers, prompt wording did not, and the small holdout was wrong about code
+until the slice was five times larger.
 
-Benchmark on 100 real OpenHands trajectories (685 large tool results, 2.26M tokens, `eval/bench/`): the default
-pre-send configuration sends 78.6 % fewer tokens for large results with 0 of 15 later edits missing their old text,
-0.6 % quote-misses and 2.3 % ref-misses (an identifier the agent then used that only existed in the dropped part).
-Details, the metric definitions and the autoresearch loop are in `STATUS.md`.
+## Optional: post-send pruning
 
-Headline from the first night of runs (details and caveats in `STATUS.md`): decisions are sensible and the mechanism
-holds (frozen decisions, stable prefix), but under a 10× prompt-cache discount pruning after first send is a
-**context-budget** tool, not a cost tool. Rolling mode cut input tokens 19 % on long sessions and still cost 17 % more
-because each prune rewrites the cached prefix; budget mode keeps the cache (65 % hit vs 70 % baseline) and passed
-12/13 tasks (baseline 13/13). The pre-send compression implemented here targets those costs by avoiding the initial
-send of unnecessary output.
+`JEV_LENS_MODE=budget` (or `rolling`, `batch`) turns on a second layer: after the agent has reacted to a tool result,
+jev judges whether it is still needed, and the result is trimmed to head and tail or replaced by a one-line stub in
+later prompts. Decisions are persisted and frozen once applied, so the cached prefix is rewritten as rarely as
+possible; `budget` mode only rewrites when the pending prunes remove at least half of the tail they would touch.
+Measured on real sessions this frees context but does not save money under prompt-cache pricing, which is why it is
+off by default. Its settings: `JEV_LENS_BUDGET_FRACTION` / `_BUDGET_MIN_TOKENS` (`0.5` / `1000`), `JEV_LENS_FORGET_BELOW`
+(`0.25`), `JEV_LENS_TRIM_BELOW` / `_TRIM_ABOVE` (`0.5` / `0.6`), `JEV_LENS_MIN_TOKENS` (`150`), `JEV_LENS_TRIM_HEAD` /
+`_TRIM_TAIL` (`15` / `15`), `JEV_LENS_CLASSIFY_WAIT_MS` (`2500`), `JEV_LENS_CACHE_TTL_MS` (`300000`),
+`JEV_LENS_STATE_HEAD` / `_STATE_TAIL` (`2500` / `800`), `JEV_LENS_DISABLED=1` (new decisions become `keep`).
+`/jev-lens decisions` lists them. Tool results are never removed, only rewritten.
 
 ## Using this as a reference
 
@@ -203,26 +163,23 @@ The pieces are independent of pi and can be lifted into another agent:
 
 | piece | file | depends on |
 |---|---|---|
-| candidate views (outline, focus, signals, testlog, tree, matches, log, sample, head/tail) | `src/views.ts` | regex views need no external packages; async code views optionally load `src/treesitter.ts` |
+| candidate views | `src/views.ts` | nothing; async code views optionally load `src/treesitter.ts` |
 | tree-sitter blocks and signatures | `src/treesitter.ts` | `web-tree-sitter`, `@vscode/tree-sitter-wasm`, `@binclusive/tree-sitter-kotlin-wasm` |
 | the jev questions, state shape, decision rule, block expansion | `src/presend.ts` | `@typesafe-ai/sdk` |
-| post-send decisions and the frozen, cache-aware ledger | `src/classifier.ts`, `src/policy.ts`, `src/ledger.ts` | `@typesafe-ai/sdk` |
-| the hook wiring for pi (tool_result, context, recall tool, UI) | `index.ts`, `src/ui.ts` | pi |
+| bash display-command parser | `src/shell-display.ts` | nothing |
+| the hook wiring for pi (tool_result, recall tool, UI) | `index.ts`, `src/ui.ts` | pi |
 | benchmark and metrics on real trajectories | `eval/presend-score.ts`, `eval/bench/` | run `eval/bench/fetch.sh` first |
+| post-send decisions and the frozen ledger | `src/classifier.ts`, `src/policy.ts`, `src/ledger.ts` | `@typesafe-ai/sdk` |
 
-The order of operations that matters, in one paragraph: when a tool result arrives and is large, build views from the
-text (code, no model), ask jev which view suffices and whether exact text is needed, apply the configured selection
-policy, and optionally expand code blocks in a second request. If a reduced view wins, replace the content with that
-view plus a footer naming `recall`, and keep the full text in result details. Post-send classification then decides
-whether to keep, trim or stub eligible results. Persist and re-apply those decisions to avoid repeated changes to
-already-transformed messages. Never remove a tool result, only rewrite it.
+In one paragraph: when a large tool result arrives, build views from the text (code, no model), ask jev which view
+suffices and whether exact text is needed, apply the selection policy, and optionally expand blocks or sections in a
+second request. If a reduced view wins, replace the content with that view plus a footer naming `recall`, and keep the
+full text in the result's details.
 
 ## Contributing and license
 
 Issues and pull requests are welcome at [github.com/dizk/pi-jev-lens](https://github.com/dizk/pi-jev-lens).
 `npm test` runs the unit tests with the mock classifier; `npm run typecheck` runs tsc. Changes to how views are built
-or chosen should come with benchmark numbers (see [Evaluation](#evaluation)); anything that touches code views must be
-scored on the 500-trajectory slice, not only the 100-trajectory holdout, because edit-misses are rare and expensive.
-STATUS.md is the research log: what was tried, what the numbers said, and why the defaults are what they are.
+or chosen should come with benchmark numbers, on the 500-trajectory slice when they touch code.
 
 MIT, see LICENSE.
