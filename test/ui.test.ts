@@ -21,19 +21,20 @@ describe("ui", () => {
 	it("overlay renders within width and height, scrolls, toggles", () => {
 		let closed = false;
 		const o = new DiffOverlay(rec, theme, 20, () => { closed = true; });
-		const lines = o.render(60);
-		expect(lines.length).toBeLessThanOrEqual(20);
-		for (const l of lines) expect(visibleWidth(l)).toBeLessThanOrEqual(60);
+		const narrow = o.render(60);
+		expect(narrow.length).toBeLessThanOrEqual(20);
+		for (const l of narrow) expect(visibleWidth(l)).toBeLessThanOrEqual(60);
+		const lines = o.render(160);
 		expect(lines[0]).toContain("read src/a.py");
 		expect(lines[1]).toContain("48 of 50 lines omitted");
 		expect(lines.some((l) => l.includes("1 │ line 1"))).toBe(true);
 		expect(lines.some((l) => l.includes("− line 2"))).toBe(true);
 		o.handleInput(PAGE_DOWN);
-		const after = o.render(60);
+		const after = o.render(160);
 		expect(after[after.length - 1]).toMatch(/lines \d+-\d+ of 50/);
 		expect(after[after.length - 1]).not.toContain("lines 1-");
 		o.handleInput("t");
-		const sent = o.render(60);
+		const sent = o.render(160);
 		expect(sent.some((l) => l.includes("48 lines omitted"))).toBe(true);
 		expect(sent[2]).toContain("exactly what the model got");
 		o.handleInput("q");
