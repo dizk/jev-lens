@@ -164,17 +164,20 @@ For example, `0/3 new · 5 restored` means no new compressions among three candi
 New-result counts and recall counts start at zero after loading. `/jev-lens stats` shows new and restored savings separately.
 
 In the transcript, a compressed result shows a header like `⌁ jev-lens outline · 179 of 1524 tokens (−88 %)`. When
-you expand it with ctrl+e, you see exactly what the model saw. These commands are available:
+you press ctrl+o to expand, you see full output on the left and compressed output on the right.
+Retained lines align with their originals. A `−` marks each omitted line in the full output.
+Long lines wrap. On narrow terminals, the two versions appear one below the other.
+The collapsed result ends with a hint such as `… (48 lines pruned, 50 original, ctrl+o for diff)`.
+The compressed version includes omission markers but excludes the recall footer. Press ctrl+o again to collapse.
+This uses pi's tool expansion keybinding, including any custom binding.
 
-Type `/jev-lens ` and press Tab to complete subcommands. After `diff `, completion offers available result numbers.
+Type `/jev-lens ` and press Tab to complete subcommands.
 Use `/reload` after installing the package in a running pi session.
 
 - `/jev-lens` or `/jev-lens stats` shows the statistics, active configuration, and key source.
 - `/jev-lens help` shows command usage.
 - `/jev-lens decisions` shows post-send pruning decisions. Post-send pruning is off by default.
 - `/jev-lens list` lists the latest 200 compressed results with the tokens before and after.
-- `/jev-lens diff [n]` opens an overlay for the n-th latest result. It shows the original with the lines that the
-  model did not get marked with `−`. Press `t` to see what was sent, and `Esc` to close.
 - `/jev-lens key` stores the API key.
 
 If compression fails, jev-lens keeps the full output and shows a warning. A failed post-send classification leaves that result unchanged.

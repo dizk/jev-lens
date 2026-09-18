@@ -2,11 +2,9 @@
  * TUI integration: what the model got versus what the tool really returned.
  *
  * - Built-in tools (read, bash, grep, find, ls) are re-registered with renderers that show, for
- *   a compressed result, a one-line savings header and (expanded) the exact text the model saw.
- * - `/jev-lens diff [n]` opens an overlay with the original output, omitted lines marked, and
- *   `t` toggles to the sent view.
+ *   a compressed result, a savings header and an inline comparison when expanded.
  */
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Everything needed to show one compressed result. Stored per session and in the tool result details. */
 export interface CompressedRecord {
@@ -39,9 +37,14 @@ export function savingsLine(r: CompressedRecord, theme: ThemeLike): string {
 		theme.fg("accent", "⌁ jev-lens ") +
 		theme.fg("toolTitle", theme.bold(r.view)) +
 		theme.fg("muted", ` · ${r.tokensAfter} of ${r.tokensBefore} tokens (−${pct} %)`) +
-		(r.recalls ? theme.fg("warning", ` · recalled ${r.recalls}×`) : "") +
-		theme.fg("dim", " · /jev-lens diff")
+		(r.recalls ? theme.fg("warning", ` · recalled ${r.recalls}×`) : "")
 	);
+}
+
+export function comparisonHint(r: CompressedRecord, key: string): string {
+	const original = r.full.split("\n").length;
+	const pruned = original - new Set(r.included).size;
+	return `… (${pruned} ${pruned === 1 ? "line" : "lines"} pruned, ${original} original, ${key} for diff)`;
 }
 
 function describeArgs(toolName: string, args: unknown): string {
@@ -52,83 +55,59 @@ function describeArgs(toolName: string, args: unknown): string {
 	return JSON.stringify(a).slice(0, 80);
 }
 
-/**
- * Overlay showing the original output with omitted lines marked (mode "annotated"), or exactly
- * what was sent (mode "sent"). Keys: ↑/↓ scroll, PgUp/PgDn, Home/End, t toggle, Esc/q close.
- */
-export class DiffOverlay {
-	private offset = 0;
-	private mode: "annotated" | "sent" = "annotated";
+/** Inline comparison. Pi owns expansion and transcript scrolling; no extra key handler. */
+export class ComparisonResult {
 	private cache?: { width: number; lines: string[] };
-	constructor(
-		private record: CompressedRecord,
-		private theme: ThemeLike,
-		private height: number,
-		private onClose: () => void,
-		private onChange?: () => void,
-	) {}
+	constructor(private record: CompressedRecord, private theme: ThemeLike, private hint: string) {}
 
-	private bodyLines(width: number): string[] {
+	render(width: number): string[] {
+		if (width < 1) return [];
+		if (this.cache?.width === width) return this.cache.lines;
 		const r = this.record;
-		const out: string[] = [];
-		if (this.mode === "sent") {
-			for (const l of r.sent.split("\n")) out.push(truncateToWidth(l, width));
-			return out;
+		const full = r.full.split("\n");
+		const included = new Set(r.included);
+		const digits = String(full.length).length;
+		const original = (i: number) => this.theme.fg(included.has(i + 1) ? "text" : "toolDiffRemoved",
+			`${String(i + 1).padStart(digits)} ${included.has(i + 1) ? "│" : "−"} ${full[i]}`);
+		const wrap = (text: string, columns: number) => wrapTextWithAnsi(text.replace(/\t/g, "    "), columns)
+			.map((line) => truncateToWidth(line, columns));
+		const out = wrap(savingsLine(r, this.theme), width);
+		out.push(...wrap(this.theme.fg("dim", this.hint), width));
+		out.push(...wrap(this.theme.fg("dim", "− omitted from model input · compressed view excludes the recall footer"), width));
+		if (width < 100) {
+			out.push(...wrap(this.theme.bold("Full output"), width));
+			for (let i = 0; i < full.length; i++) out.push(...wrap(original(i), width));
+			out.push("", ...wrap(this.theme.bold("Compressed output"), width));
+			for (const line of r.sent.split("\n")) out.push(...wrap(line, width));
+		} else {
+			const leftWidth = Math.floor((width - 3) / 2);
+			const rightWidth = width - leftWidth - 3;
+			const row = (left: string, right: string) => {
+				const a = wrap(left, leftWidth), b = wrap(right, rightWidth);
+				for (let i = 0; i < Math.max(a.length, b.length); i++) {
+					const l = a[i] ?? "";
+					out.push(l + " ".repeat(Math.max(0, leftWidth - visibleWidth(l))) + this.theme.fg("dim", " │ ") + (b[i] ?? ""));
+				}
+			};
+			row(this.theme.bold("Full output"), this.theme.bold("Compressed output"));
+			let cursor = 0;
+			// Align numbered view lines with their originals. Keep markers and any other
+			// generated view text verbatim on separate rows, rather than reconstructing it.
+			for (const line of r.sent.split("\n")) {
+				const match = /^\s*(\d+)│ /.exec(line);
+				const n = match ? Number(match[1]) : 0;
+				if (n > cursor && n <= full.length && included.has(n)) {
+					while (cursor < n - 1) row(original(cursor++), "");
+					row(original(cursor++), line);
+				} else row("", line);
+			}
+			while (cursor < full.length) row(original(cursor++), "");
 		}
-		const inc = new Set(r.included);
-		const lines = r.full.split("\n");
-		const w = String(lines.length).length;
-		for (let i = 0; i < lines.length; i++) {
-			const n = String(i + 1).padStart(w);
-			if (inc.has(i + 1)) out.push(truncateToWidth(this.theme.fg("dim", `${n} `) + this.theme.fg("text", "│ ") + lines[i], width));
-			else out.push(truncateToWidth(this.theme.fg("toolDiffRemoved", `${n} − ${lines[i]}`), width));
-		}
+		this.cache = { width, lines: out };
 		return out;
 	}
 
-	header(width: number): string[] {
-		const r = this.record;
-		const pct = r.tokensBefore ? Math.round((100 * (r.tokensBefore - r.tokensAfter)) / r.tokensBefore) : 0;
-		const omitted = r.full.split("\n").length - r.included.length;
-		return [
-			truncateToWidth(this.theme.fg("accent", this.theme.bold(`jev-lens · ${r.toolName} ${describeArgs(r.toolName, r.args)}`)), width),
-			truncateToWidth(this.theme.fg("muted", `${r.kind} → ${r.view} · ${r.tokensAfter} of ${r.tokensBefore} tokens (−${pct} %) · ${omitted} of ${r.full.split("\n").length} lines omitted` + (r.needsFull !== undefined ? ` · P(needs full)=${r.needsFull.toFixed(2)} P(full)=${(r.pFull ?? 0).toFixed(2)}` : "") + (r.recalls ? ` · recalled ${r.recalls}×` : "")), width),
-			truncateToWidth(this.theme.fg("dim", this.mode === "annotated" ? "original output; − marks lines the model did not get · t: show what was sent · ↑↓ PgUp PgDn · Esc" : "exactly what the model got · t: show original with omissions · ↑↓ PgUp PgDn · Esc"), width),
-			"",
-		];
-	}
-
-	render(width: number): string[] {
-		if (this.cache && this.cache.width === width) return this.cache.lines;
-		const head = this.header(width);
-		const body = this.bodyLines(width);
-		const room = Math.max(3, this.height - head.length - 1);
-		const maxOffset = Math.max(0, body.length - room);
-		if (this.offset > maxOffset) this.offset = maxOffset;
-		const slice = body.slice(this.offset, this.offset + room);
-		const footer = truncateToWidth(this.theme.fg("dim", `lines ${body.length ? this.offset + 1 : 0}-${Math.min(body.length, this.offset + room)} of ${body.length}`), width);
-		this.cache = { width, lines: [...head, ...slice, footer] };
-		return this.cache.lines;
-	}
-
-	handleInput(data: string): void {
-		const page = Math.max(1, this.height - 6);
-		if (matchesKey(data, "escape") || data === "q") { this.onClose(); return; }
-		else if (matchesKey(data, "up")) this.offset = Math.max(0, this.offset - 1);
-		else if (matchesKey(data, "down")) this.offset += 1;
-		else if (matchesKey(data, "pageUp")) this.offset = Math.max(0, this.offset - page);
-		else if (matchesKey(data, "pageDown")) this.offset += page;
-		else if (matchesKey(data, "home")) this.offset = 0;
-		else if (matchesKey(data, "end")) this.offset = Number.MAX_SAFE_INTEGER;
-		else if (data === "t") { this.mode = this.mode === "annotated" ? "sent" : "annotated"; this.offset = 0; }
-		else return;
-		this.invalidate();
-		this.onChange?.();
-	}
-
-	invalidate(): void {
-		this.cache = undefined;
-	}
+	invalidate(): void { this.cache = undefined; }
 }
 
 /** One row per compressed result, newest last. */

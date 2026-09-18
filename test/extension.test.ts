@@ -1,9 +1,15 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentMessage } from "../src/pi-types.ts";
 import { STUB_PREFIX } from "../src/policy.ts";
+
+// The test harness has no interactive keybinding manager.
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+	...await importOriginal<typeof import("@earendil-works/pi-coding-agent")>(),
+	keyText: vi.fn(() => "ctrl+o"),
+}));
 
 process.env.JEV_LENS_CLASSIFIER = "mock";
 process.env.JEV_LENS_MODE = "rolling";
@@ -178,18 +184,24 @@ describe("TUI integration", () => {
 		const text = String(comp.render(200).join("\n"));
 		expect(text).toContain("jev-lens");
 		expect(text).toMatch(/of \d+ tokens \(−\d+ %\)/);
+		expect(text).toMatch(/… \(\d+ lines pruned, \d+ original, ctrl\+o for diff\)/);
 		// Native read results are hidden when collapsed; the built-in call header carries the path.
 		const plain = tools.get("read").renderResult({ content: [{ type: "text", text: "a\nb" }] }, { expanded: false, isPartial: false }, theme, { toolCallId: "nope", args: { path: "a.txt" }, cwd: ctx.cwd, state: {} });
 		expect(String(plain.render(80).join("\n"))).toBe("");
 		const notes: string[] = [];
 		const cmdCtx = { ...ctx, hasUI: false, mode: "print", ui: { notify: (m: string) => notes.push(m), setStatus() {} } };
-		await commands.get("jev-lens").handler("diff", cmdCtx);
-		expect(notes[0]).toContain("src/categories.js");
+		const expanded = tools.get("read").renderResult(r, { expanded: true }, theme, { toolCallId: "c9" });
+		expect(expanded.render(160).join("\n")).toMatch(/Full output.*Compressed output/);
+		expect(expanded.render(60).join("\n")).toContain("Compressed output");
+		// Persisted details also work without an entry in the recent-results index.
+		const older = tools.get("read").renderResult(r, { expanded: true }, theme, { toolCallId: "older" });
+		expect(older.render(160)).toEqual(expanded.render(160));
 		await commands.get("jev-lens").handler("list", cmdCtx);
-		expect(notes[1]).toMatch(/outline|relevant/);
-		expect(commands.get("jev-lens").getArgumentCompletions("diff ")[0].value).toBe("diff 1");
-		await commands.get("jev-lens").handler("diff 2", cmdCtx);
-		expect(notes[2]).toContain("Choose 1-1");
+		expect(notes[0]).toContain("src/categories.js");
+		expect(notes[0]).toMatch(/outline|relevant/);
+		expect(commands.get("jev-lens").getArgumentCompletions("diff ")).toBeNull();
+		await commands.get("jev-lens").handler("diff", cmdCtx);
+		expect(notes[1]).toContain("Unknown subcommand");
 	});
 });
 
@@ -252,8 +264,8 @@ describe("command UX", () => {
 		const { pi, commands } = fakePi();
 		mod.default(pi as any);
 		const cmd = commands.get("jev-lens");
-		expect(cmd.getArgumentCompletions("").map((i: any) => i.value)).toEqual(["stats", "list", "diff", "decisions", "key", "help"]);
-		expect(cmd.getArgumentCompletions("di").map((i: any) => i.value)).toEqual(["diff"]);
+		expect(cmd.getArgumentCompletions("").map((i: any) => i.value)).toEqual(["stats", "list", "decisions", "key", "help"]);
+		expect(cmd.getArgumentCompletions("di")).toBeNull();
 		for (const prefix of ["key ts_secret", "stats ", "unknown", "diff "]) expect(cmd.getArgumentCompletions(prefix)).toBeNull();
 		const notes: { text: string; level: string }[] = [];
 		const ctx = { ...ctxFor("/tmp", []), ui: { notify: (text: string, level: string) => notes.push({ text, level }), setStatus() {} } };
@@ -262,7 +274,7 @@ describe("command UX", () => {
 			expect(notes.at(-1)?.level).toBe("warning");
 		}
 		await cmd.handler("help", ctx);
-		expect(notes.at(-1)?.text).toContain("/jev-lens diff [n]");
+		expect(notes.at(-1)?.text).toContain("ctrl+o");
 		await cmd.handler("stats", ctx);
 		expect(notes.at(-1)?.text).toContain("mock (forced by JEV_LENS_CLASSIFIER)");
 		await cmd.handler("key", ctx); // no input dialog in print mode

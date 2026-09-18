@@ -13,11 +13,11 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "./src/pi-types.ts";
-import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, keyText } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createBashToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { DiffOverlay, listLines, savingsLine, type CompressedRecord } from "./src/ui.ts";
+import { ComparisonResult, comparisonHint, listLines, savingsLine, type CompressedRecord } from "./src/ui.ts";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
 import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "./src/presend.ts";
@@ -459,13 +459,23 @@ export default function (pi: ExtensionAPI) {
 			pi.registerTool({
 				...original,
 				renderResult(result, options, theme, context) {
-					const rec = recordById.get(context.toolCallId);
+					let rec = recordById.get(context.toolCallId);
+					// Older rows can leave the recent-results index, but retain their comparison.
+					const d = result.details?.jevLens;
+					if (!rec && typeof d?.full === "string") {
+						const sent = contentText(result.content).replace(/\n\n\[jev-lens:[\s\S]*$/, "");
+						rec = { id: context.toolCallId, toolName: original.name, args: d.args,
+							kind: d.kind ?? "?", view: d.view ?? "?", full: d.full, sent,
+							tokensBefore: estimateTokensOfText(d.full), tokensAfter: estimateTokensOfText(sent),
+							included: d.included ?? [], recalls: 0, at: 0 };
+					}
 					if (!rec || options.isPartial || context.isError) {
 						return original.renderResult!(result, options, theme, context);
 					}
+					if (options.expanded) return new ComparisonResult(rec, theme, `${keyText("app.tools.expand")} to collapse`);
 					let out = savingsLine(rec, theme);
-					if (options.expanded) out += "\n" + rec.sent;
-					else out += "\n" + theme.fg("dim", rec.sent.split("\n").slice(0, 3).join("\n"));
+					out += "\n" + theme.fg("dim", rec.sent.split("\n").slice(0, 3).join("\n"));
+					out += "\n" + theme.fg("dim", comparisonHint(rec, keyText("app.tools.expand")));
 					return new Text(out, 0, 0);
 				},
 			});
@@ -475,8 +485,8 @@ export default function (pi: ExtensionAPI) {
 	// ---- commands ----------------------------------------------------------------------
 
 	pi.registerCommand("jev-lens", {
-		description: "Inspect compression and setup: stats | list | diff [n] | decisions | key | help",
-		getArgumentCompletions: (prefix) => commandCompletions(prefix, records),
+		description: "Inspect compression and setup: stats | list | decisions | key | help",
+		getArgumentCompletions: (prefix) => commandCompletions(prefix),
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
 			if (sub === "help" || sub === "--help" || sub === "-h") {
@@ -501,24 +511,6 @@ export default function (pi: ExtensionAPI) {
 				const next = cfg.forceMock ? "Mock mode remains active. Unset JEV_LENS_CLASSIFIER and reload pi to use jev." : !cfg.enabled || !cfg.presend ? "Pre-send compression is disabled. See /jev-lens stats." : "jev will use this key from the next tool result. The key has not been validated.";
 				ctx.ui.notify(`jev-lens: key stored in ${where}. ${next}${process.env.TYPESAFE_API_KEY ? " TYPESAFE_API_KEY takes priority again after reload." : ""}`, "info");
 				status(ctx);
-				return;
-			}
-			if (/^diff(?:\s|$)/.test(sub)) {
-				const arg = sub.slice(4).trim();
-				const n = Number(arg || "1");
-				if ((arg && !/^\d+$/.test(arg)) || !Number.isSafeInteger(n) || n < 1) {
-					ctx.ui.notify("Usage: /jev-lens diff [n]. Use a positive whole number. 1 is the newest result.", "warning");
-					return;
-				}
-				if (!records.length) { ctx.ui.notify("No compressed results yet. Use /jev-lens stats to inspect compression settings.", "info"); return; }
-				const rec = records[records.length - n];
-				if (!rec) { ctx.ui.notify(`Result ${n} is not available. Choose 1-${records.length} from /jev-lens list.`, "warning"); return; }
-				if (!ctx.hasUI || ctx.mode !== "tui") { ctx.ui.notify(listLines([rec], { fg: (_c, t) => t, bold: (t) => t }).join("\n"), "info"); return; }
-				await ctx.ui.custom<void>((tui, theme, _kb, done) => {
-					const height = Math.max(12, Math.floor(((tui as { terminalHeight?: number }).terminalHeight ?? process.stdout.rows ?? 40) * 0.85));
-					const overlay = new DiffOverlay(rec, theme, height, () => done(), () => tui.requestRender());
-					return { render: (w) => overlay.render(w), handleInput: (d) => overlay.handleInput(d), invalidate: () => overlay.invalidate() };
-				}, { overlay: true, overlayOptions: { width: "92%", maxHeight: "90%", anchor: "center" } });
 				return;
 			}
 			if (sub === "list") {
