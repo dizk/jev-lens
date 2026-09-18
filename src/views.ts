@@ -156,27 +156,39 @@ export function extractTerms(...texts: string[]): string[] {
 
 const STOP = new Set("this that with from have will would should could there their about which where when what make sure does into then than only also just some more most such each other after before because while please tests test file files function functions module modules code change changes changed running return returns using used uses need needs needed does must keep keeps always never every existing behaviour behavior following current update updated added adding delete remove rename renamed read write import export const class type string number object array value values default defaults lines line".split(/\s+/));
 
+export interface ViewParams {
+	headLines: number;
+	tailLines: number;
+	focusCtx: number;
+	sampleRows: number;
+	signalsCtx: number;
+	signalsTail: number;
+	minShrink: number;
+}
+export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 2, signalsTail: 8, minShrink: 0.6 };
+
 export interface Candidates {
 	kind: ContentKind;
 	views: View[];
 }
 
 /** Build the candidate views for a tool result. Full is always first. Views that do not shrink the text enough are dropped. */
-export function buildCandidates(toolName: string, args: unknown, text: string, terms: string[], minShrink = 0.6): Candidates {
+export function buildCandidates(toolName: string, args: unknown, text: string, terms: string[], params: Partial<ViewParams> = {}): Candidates {
+	const P = { ...DEFAULT_VIEW_PARAMS, ...params };
 	const kind = detectKind(toolName, args, text);
 	const full = fullView(text);
 	const cands: View[] = [full];
 	const add = (v: View | undefined) => {
 		if (!v || v.kind === "full") return;
-		if (v.chars > full.chars * minShrink) return;
+		if (v.chars > full.chars * P.minShrink) return;
 		if (cands.some((c) => c.kind === v.kind)) return;
 		cands.push(v);
 	};
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
-	if (kind === "command" || kind === "listing") add(signalsView(text));
-	if (kind === "data") add(sampleView(text));
-	add(focusView(text, terms));
-	add(headTailView(text));
+	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
+	if (kind === "data") add(sampleView(text, P.sampleRows));
+	add(focusView(text, terms, P.focusCtx));
+	add(headTailView(text, P.headLines, P.tailLines));
 	return { kind, views: cands };
 }
 
@@ -224,9 +236,9 @@ export function splitBlocks(text: string, maxBlocks = 32): Block[] {
 }
 
 /** Outline plus the full bodies of the chosen blocks. */
-export function relevantView(text: string, kind: ContentKind, blocks: Block[], expand: Set<number>): View {
+export function relevantView(text: string, kind: ContentKind, blocks: Block[], expand: Set<number>, outlineIncluded?: number[]): View {
 	const lines = text.split("\n");
-	const outline = outlineView(text, kind);
+	const outline = outlineIncluded ? { included: outlineIncluded } : outlineView(text, kind);
 	const idx = new Set(outline.included.map((n) => n - 1));
 	for (const b of expand) {
 		const blk = blocks[b];
@@ -234,4 +246,28 @@ export function relevantView(text: string, kind: ContentKind, blocks: Block[], e
 		for (let i = blk.from - 1; i <= blk.to - 1; i++) idx.add(i);
 	}
 	return make("relevant", lines, [...idx].sort((a, b) => a - b));
+}
+
+/**
+ * Async variant of buildCandidates that uses tree-sitter for the outline of code files when the
+ * grammar is available, and returns the blocks so the second step can reuse them.
+ */
+export async function buildCandidatesAsync(toolName: string, args: unknown, text: string, terms: string[], params: Partial<ViewParams> = {}): Promise<Candidates & { blocks?: Block[] }> {
+	const minShrink = params.minShrink ?? DEFAULT_VIEW_PARAMS.minShrink;
+	const base = buildCandidates(toolName, args, text, terms, params);
+	const path = typeof (args as { path?: unknown })?.path === "string" ? ((args as { path: string }).path) : "";
+	if (base.kind !== "code" || !path) return base;
+	try {
+		const { treeSitterBlocks, treeSitterOutline } = await import("./treesitter.ts");
+		const [blocks, outlineIdx] = await Promise.all([treeSitterBlocks(path, text), treeSitterOutline(path, text)]);
+		if (!outlineIdx || outlineIdx.length < 3) return { ...base, blocks: blocks ?? undefined };
+		const lines = text.split("\n");
+		const full = base.views[0];
+		const outline = make("outline", lines, outlineIdx);
+		const views = base.views.filter((v) => v.kind !== "outline");
+		if (outline.chars <= full.chars * minShrink) views.splice(1, 0, outline);
+		return { kind: base.kind, views, blocks: blocks ?? undefined };
+	} catch {
+		return base;
+	}
 }

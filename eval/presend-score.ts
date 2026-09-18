@@ -1,0 +1,128 @@
+/**
+ * Shared scoring of pre-send compression against a recorded session: for every large tool
+ * result, build views, let the classifier choose, and compare with what the agent did next.
+ */
+import type { Config } from "../src/config.ts";
+import { buildPresendState, decideView, expandRelevantBlocks, type PresendClassifier } from "../src/presend.ts";
+import type { AgentMessage } from "../src/pi-types.ts";
+import { contentText, estimateTokensOfText } from "../src/text.ts";
+import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "../src/views.ts";
+
+export interface ScoreRow {
+	session: string; tool: string; args: string; kind: string; tokens: number; view: string; viewTokens: number; chosen: string;
+	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; editsChecked: number; ms: number;
+}
+
+function omittedText(full: string, view: View): string {
+	if (view.kind === "full") return "";
+	const inc = new Set(view.included);
+	return full.split("\n").filter((_, i) => !inc.has(i + 1)).join("\n");
+}
+function spans(text: string, n = 40): string[] {
+	const out: string[] = [];
+	for (const line of text.split("\n")) { const t = line.trim(); if (t.length >= n) out.push(t); }
+	return out;
+}
+
+export async function scoreMessages(
+	session: string,
+	msgs: AgentMessage[],
+	presend: PresendClassifier,
+	cfg: Config,
+	viewParams: Partial<ViewParams> = {},
+	onRow?: (r: ScoreRow) => void,
+): Promise<ScoreRow[]> {
+	const rows: ScoreRow[] = [];
+	let firstUser = "", latestUser = "", lastAssistant = "";
+	const argsById = new Map<string, unknown>();
+	for (let k = 0; k < msgs.length; k++) {
+		const m = msgs[k];
+		if (m.role === "user") { const t = contentText(m.content); if (!firstUser) firstUser = t; latestUser = t; continue; }
+		if (m.role === "assistant") { lastAssistant = contentText(m.content); for (const c of m.content) if (c.type === "toolCall") argsById.set(c.id, c.arguments); continue; }
+		if (m.role !== "toolResult") continue;
+		const text = contentText(m.content);
+		const tokens = estimateTokensOfText(text);
+		if (tokens < cfg.presendMinTokens) continue;
+		const args = argsById.get(m.toolCallId);
+		const terms = extractTerms(latestUser, lastAssistant, JSON.stringify(args ?? {}));
+		const cands = await buildCandidatesAsync(m.toolName, args, text, terms, viewParams);
+		if (cands.views.length < 2) continue;
+		const t0 = Date.now();
+		const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistant, toolName: m.toolName, args, isError: m.isError, cands, totalLines: text.split("\n").length, totalChars: text.length });
+		let answer: Awaited<ReturnType<PresendClassifier["choose"]>>;
+		try { answer = await presend.choose(state, cands.views.map((v) => v.kind)); } catch { continue; }
+		let view = decideView(answer, cands, cfg);
+		if (view.kind !== "full") {
+			try { const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, undefined, cands.blocks); if (ex) view = ex.view; } catch {}
+		}
+		const path = (args as { path?: string })?.path;
+		let editMiss = false, quoteMiss = false, editsChecked = 0;
+		const omitted = omittedText(text, view);
+		// The view is the agent's only knowledge of this output until it reads the same path again
+		// (or for at most 12 assistant messages), so edits of that path in that window are checked.
+		let seen = 0;
+		let reread = false;
+		for (let j = k + 1; j < msgs.length && seen < 12 && !reread; j++) {
+			const n = msgs[j];
+			if (n.role !== "assistant") continue;
+			seen++;
+			if (seen === 1) { const nt = contentText(n.content); for (const s of spans(nt)) if (omitted.includes(s) && !view.text.includes(s)) { quoteMiss = true; break; } }
+			for (const c of n.content) {
+				if (c.type === "toolCall" && c.name === "read" && path && (c.arguments as { path?: string })?.path === path) reread = true;
+				if (c.type === "toolCall" && c.name === "recall") reread = true;
+			}
+			for (const c of n.content) {
+				if (c.type !== "toolCall" || c.name !== "edit" || (c.arguments as { path?: string })?.path !== path) continue;
+				for (const e of ((c.arguments as { edits?: { oldText: string }[] }).edits ?? [])) {
+					const first = (e.oldText ?? "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+					if (!first) continue;
+					editsChecked++;
+					if (text.includes(first) && !view.text.includes(first.slice(0, 80))) editMiss = true;
+				}
+			}
+		}
+		const row: ScoreRow = { session, tool: m.toolName, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, editsChecked, ms: Date.now() - t0 };
+		rows.push(row);
+		onRow?.(row);
+	}
+	return rows;
+}
+
+export interface Summary {
+	results: number; compressed: number; tokens: number; sent: number; savedPct: number;
+	editable: number; editMiss: number; editMissPct: number; quoteMiss: number; quoteMissPct: number;
+	views: Record<string, number>; byKind: Record<string, { n: number; savedPct: number; editMissPct: number }>;
+	/** Objective for autoresearch: saved% minus 5× edit-miss% minus 2× quote-miss% (percentage points). */
+	objective: number; meanMs: number;
+}
+
+export function summarize(rows: ScoreRow[]): Summary {
+	const tokens = rows.reduce((a, r) => a + r.tokens, 0), sent = rows.reduce((a, r) => a + r.viewTokens, 0);
+	const editable = rows.filter((r) => r.editsChecked > 0);
+	const editMiss = rows.filter((r) => r.editMiss).length, quoteMiss = rows.filter((r) => r.quoteMiss).length;
+	const views: Record<string, number> = {};
+	for (const r of rows) views[r.view] = (views[r.view] ?? 0) + 1;
+	const byKind: Summary["byKind"] = {};
+	for (const kind of new Set(rows.map((r) => r.kind))) {
+		const rs = rows.filter((r) => r.kind === kind);
+		const t = rs.reduce((a, r) => a + r.tokens, 0), s = rs.reduce((a, r) => a + r.viewTokens, 0);
+		const ed = rs.filter((r) => r.editsChecked > 0);
+		byKind[kind] = { n: rs.length, savedPct: t ? (100 * (t - s)) / t : 0, editMissPct: ed.length ? (100 * ed.filter((r) => r.editMiss).length) / ed.length : 0 };
+	}
+	const savedPct = tokens ? (100 * (tokens - sent)) / tokens : 0;
+	const editMissPct = editable.length ? (100 * editMiss) / editable.length : 0;
+	const quoteMissPct = rows.length ? (100 * quoteMiss) / rows.length : 0;
+	return { results: rows.length, compressed: rows.filter((r) => r.view !== "full").length, tokens, sent, savedPct, editable: editable.length, editMiss, editMissPct, quoteMiss, quoteMissPct, views, byKind, objective: savedPct - 5 * editMissPct - 2 * quoteMissPct, meanMs: rows.length ? rows.reduce((a, r) => a + r.ms, 0) / rows.length : 0 };
+}
+
+export function renderSummary(s: Summary): string {
+	return [
+		"| large results | compressed | tokens | sent | saved | edit-miss (of edited) | quote-miss | objective | views | mean ms |",
+		"|---|---|---|---|---|---|---|---|---|---|",
+		`| ${s.results} | ${s.compressed} | ${(s.tokens / 1000).toFixed(1)}k | ${(s.sent / 1000).toFixed(1)}k | ${s.savedPct.toFixed(1)}% | ${s.editMiss}/${s.editable} (${s.editMissPct.toFixed(1)}%) | ${s.quoteMiss} (${s.quoteMissPct.toFixed(1)}%) | ${s.objective.toFixed(1)} | ${Object.entries(s.views).map(([k, v]) => `${k}:${v}`).join(", ")} | ${Math.round(s.meanMs)} |`,
+		"",
+		"| kind | n | saved | edit-miss |",
+		"|---|---|---|---|",
+		...Object.entries(s.byKind).map(([k, v]) => `| ${k} | ${v.n} | ${v.savedPct.toFixed(1)}% | ${v.editMissPct.toFixed(1)}% |`),
+	].join("\n");
+}

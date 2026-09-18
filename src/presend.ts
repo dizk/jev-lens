@@ -40,17 +40,10 @@ export function buildExpandState(base: PresendState, blocks: Block[], text: stri
 	};
 }
 
-export function expandQuestions(n: number) {
+export function expandQuestions(n: number, prompts: PromptVariant = DEFAULT_PROMPTS) {
 	const q: Record<string, { type: "noul"; instructions: string; criteria: { true: string; false: string } }> = {};
 	for (let i = 0; i < n; i++) {
-		q[`b${i}`] = {
-			type: "noul",
-			instructions: `The agent working on \`task\` just read this file (\`agent.args\`) for the reason in \`agent.text_before_call\`. Will it need the full body of block \`blocks[${i}]\` (not just its signature) for its next step?`,
-			criteria: {
-				true: "The task or the agent's stated purpose concerns this block: it will edit it, call it in a specific way, explain its logic, or debug it.",
-				false: "The block is unrelated to the task, or knowing its signature and existence is enough.",
-			},
-		};
+		q[`b${i}`] = { type: "noul", instructions: prompts.expandInstructions.replaceAll("{i}", String(i)), criteria: { true: prompts.expandTrue, false: prompts.expandFalse } };
 	}
 	return q;
 }
@@ -81,36 +74,48 @@ export function buildPresendState(
 	};
 }
 
-export function presendQuestions(kinds: ViewKind[]) {
+/** Everything the autoresearch loop may vary: prompt texts and view descriptions. Defaults = current best. */
+export interface PromptVariant {
+	viewInstructions: string;
+	viewDescriptions: Partial<Record<ViewKind, string>>;
+	needsFullInstructions: string;
+	needsFullTrue: string;
+	needsFullFalse: string;
+	expandInstructions: string;
+	expandTrue: string;
+	expandFalse: string;
+}
+
+export const DEFAULT_PROMPTS: PromptVariant = {
+	viewInstructions:
+		"A coding agent working on `task` just called `agent.tool` with `agent.args` (its reasoning right before the call is `agent.text_before_call`). The output is large. `views` lists candidate presentations of the same output with a preview of each. Which view is the smallest one that still gives the agent everything it needs for its next step? Prefer smaller views only when the agent's purpose is clearly served by them; when in doubt, choose full.",
+	viewDescriptions: {},
+	needsFullInstructions:
+		"Will the agent's next step require the exact, complete text of this output, for example to make an edit whose old text must match, to copy code, or to check details that could be anywhere in it?",
+	needsFullTrue: "The agent asked for this to modify it, copy from it, or review it line by line; the task is about the contents of this specific output.",
+	needsFullFalse: "The agent is orienting itself, checking structure, looking for where something lives, confirming an outcome, or sampling data.",
+	expandInstructions: "The agent working on `task` just read this file (`agent.args`) for the reason in `agent.text_before_call`. Will it need the full body of block `blocks[{i}]` (not just its signature) for its next step?",
+	expandTrue: "The task or the agent's stated purpose concerns this block: it will edit it, call it in a specific way, explain its logic, or debug it.",
+	expandFalse: "The block is unrelated to the task, or knowing its signature and existence is enough.",
+};
+
+export function presendQuestions(kinds: ViewKind[], prompts: PromptVariant = DEFAULT_PROMPTS) {
 	const criteria: Record<string, string> = {};
-	for (const k of kinds) criteria[k] = VIEW_DESCRIPTIONS[k];
+	for (const k of kinds) criteria[k] = prompts.viewDescriptions[k] ?? VIEW_DESCRIPTIONS[k];
 	return {
-		view: {
-			type: "choice" as const,
-			instructions:
-				"A coding agent working on `task` just called `agent.tool` with `agent.args` (its reasoning right before the call is `agent.text_before_call`). The output is large. `views` lists candidate presentations of the same output with a preview of each. Which view is the smallest one that still gives the agent everything it needs for its next step? Prefer smaller views only when the agent's purpose is clearly served by them; when in doubt, choose full.",
-			criteria,
-		},
-		needs_full: {
-			type: "noul" as const,
-			instructions:
-				"Will the agent's next step require the exact, complete text of this output, for example to make an edit whose old text must match, to copy code, or to check details that could be anywhere in it?",
-			criteria: {
-				true: "The agent asked for this to modify it, copy from it, or review it line by line; the task is about the contents of this specific output.",
-				false: "The agent is orienting itself, checking structure, looking for where something lives, confirming an outcome, or sampling data.",
-			},
-		},
+		view: { type: "choice" as const, instructions: prompts.viewInstructions, criteria },
+		needs_full: { type: "noul" as const, instructions: prompts.needsFullInstructions, criteria: { true: prompts.needsFullTrue, false: prompts.needsFullFalse } },
 	};
 }
 
 export class JevPresend implements PresendClassifier {
-	constructor(private client: TypeSafeClient, private model: string) {}
+	constructor(private client: TypeSafeClient, private model: string, private prompts: PromptVariant = DEFAULT_PROMPTS) {}
 	async expand(state: ExpandState, signal?: AbortSignal): Promise<number[]> {
-		const r = await this.client.systemOne({ state: state as never, questions: expandQuestions(state.blocks.length), model: this.model }, { signal, timeout: 15000 });
+		const r = await this.client.systemOne({ state: state as never, questions: expandQuestions(state.blocks.length, this.prompts), model: this.model }, { signal, timeout: 15000 });
 		return state.blocks.map((_, i) => (r.answers[`b${i}`] as { noul: number }).noul);
 	}
 	async choose(state: PresendState, kinds: ViewKind[], signal?: AbortSignal) {
-		const r = await this.client.systemOne({ state: state as never, questions: presendQuestions(kinds), model: this.model }, { signal, timeout: 15000 });
+		const r = await this.client.systemOne({ state: state as never, questions: presendQuestions(kinds, this.prompts), model: this.model }, { signal, timeout: 15000 });
 		return { choice: r.answers.view.choice as ViewKind, probabilities: r.answers.view.probabilities as Record<string, number>, confidence: r.answers.view.confidence, needsFull: r.answers.needs_full.noul };
 	}
 }
@@ -158,14 +163,16 @@ export async function expandRelevantBlocks(
 	chosen: View,
 	threshold: number,
 	signal?: AbortSignal,
+	precomputed?: Block[],
 ): Promise<{ view: View; blocks: Block[]; probs: number[] } | undefined> {
 	if (cands.kind !== "code" || (chosen.kind !== "outline" && chosen.kind !== "focus")) return undefined;
-	const blocks = splitBlocks(text);
+	const blocks = precomputed && precomputed.length >= 2 ? precomputed : splitBlocks(text);
 	if (blocks.length < 2) return undefined;
 	const probs = await presend.expand(buildExpandState(base, blocks, text), signal);
 	const expand = new Set<number>();
 	probs.forEach((p, i) => { if (p > threshold) expand.add(i); });
-	const view = relevantView(text, cands.kind, blocks, expand);
+	const outline = cands.views.find((v) => v.kind === "outline");
+	const view = relevantView(text, cands.kind, blocks, expand, outline?.included);
 	if (view.chars >= cands.views[0].chars * 0.9) return { view: cands.views[0], blocks, probs };
 	return { view, blocks, probs };
 }

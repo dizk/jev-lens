@@ -22,7 +22,7 @@ import { Type } from "typebox";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
 import { buildPresendState, decideView, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier } from "./src/presend.ts";
-import { buildCandidates, extractTerms, footer } from "./src/views.ts";
+import { buildCandidatesAsync, extractTerms, footer } from "./src/views.ts";
 import { loadConfig, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { appendNotes, memoryPromptSection, readMemoryFile } from "./src/memory-file.ts";
@@ -318,7 +318,7 @@ export default function (pi: ExtensionAPI) {
 		presendTotals.considered++;
 		const started = Date.now();
 		const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
-		const cands = buildCandidates(event.toolName, event.input, text, terms);
+		const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms);
 		if (cands.views.length < 2) {
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
 			return;
@@ -330,7 +330,7 @@ export default function (pi: ExtensionAPI) {
 			let view = decideView(answer, cands, cfg);
 			let expanded: number[] | undefined;
 			if (view.kind !== "full") {
-				const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, ctx.signal);
+				const ex = await expandRelevantBlocks(presend, state, text, cands, view, cfg.presendExpandAbove, ctx.signal, cands.blocks);
 				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > cfg.presendExpandAbove ? i : -1)).filter((i) => i >= 0); }
 			}
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
