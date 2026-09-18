@@ -25,11 +25,11 @@ keys, headings, marker lines, paragraphs. When it is chosen, a second jev step a
 contents and puts those back, giving `relevant`).
 
 The `sections` route has its own knobs: `config.presendCommandPolicy` (`sections`, the default, =
-when jev picks full for command output with needs-full under `presendCommandNeedsFullAbove`, send sections and expand; `gate` = jev's choice stands),
-`config.presendSectionExpandAbove` (P threshold per section), `config.presendSectionFloor` (send full when no section reaches this probability; 0 = headers alone are allowed), `views.sectionMinLines`, `views.sectionMaxBlocks`,
+when jev picks full for command output with needs-full under `presendCommandNeedsFullAbove`, send sections and expand. `gate` = jev's choice stands),
+`config.presendSectionExpandAbove` (P threshold per section), `config.presendSectionFloor` (send full when no section reaches this probability. 0 = headers alone are allowed), `views.sectionMinLines`, `views.sectionMaxBlocks`,
 `views.sectionChunkLines` (chunk size for unstructured output, 0 = none), `views.sectionsView` (offer it at all), and the
-prompt texts `sectionInstructions` / `sectionTrue` / `sectionFalse` (the per-section question; `{i}` is the section index).
-Most command results that are still sent full are `grep -A/-B` context output and debug-script output; that is where
+prompt texts `sectionInstructions` / `sectionTrue` / `sectionFalse` (the per-section question, where `{i}` is the section index).
+Most command results that are still sent full are `grep -A/-B` context output and debug-script output. That is where
 `sections` should win, and `testlog`/`signals` should keep test runs.
 
 ## Variant format (JSON)
@@ -49,7 +49,7 @@ Most command results that are still sent full are `grep -A/-B` context output an
 }
 ```
 
-Omitted fields keep the current best values. Instructions reach jev as text; backticked paths like `agent.args` or
+Omitted fields keep the current best values. Instructions reach jev as text. Backticked paths like `agent.args` or
 `views.signals.preview` refer to fields of the state object. Each instruction must be one clear judgment.
 
 ## Rules
