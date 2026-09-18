@@ -216,3 +216,23 @@ describe("status line", () => {
 		expect(Math.abs(Number(m![1]) - expected)).toBeLessThanOrEqual(2);
 	});
 });
+
+describe("/jev-context key", () => {
+	it("stores a key given as argument and reports where", async () => {
+		const mod: any = await import("../index.ts");
+		const { pi, emit, entries, commands } = fakePi();
+		mod.default(pi);
+		const cwd = mkdtempSync(join(tmpdir(), "jevext-"));
+		process.env.JEV_CONTEXT_KEY_FILE = join(cwd, "jev-context.json");
+		const notes: string[] = [];
+		const ctx = { ...ctxFor(cwd, entries), ui: { notify: (m: string) => notes.push(m), setStatus() {}, input: async () => "ts_typed" } };
+		await emit("session_start", {}, ctx);
+		await commands.get("jev-context").handler("key ts_given", ctx);
+		const { readFileSync } = await import("node:fs");
+		expect(JSON.parse(readFileSync(join(cwd, "jev-context.json"), "utf8"))).toEqual({ apiKey: "ts_given" });
+		expect(notes.at(-1)).toContain("key stored in");
+		await commands.get("jev-context").handler("key", ctx); // prompts when no argument
+		expect(JSON.parse(readFileSync(join(cwd, "jev-context.json"), "utf8"))).toEqual({ apiKey: "ts_typed" });
+		delete process.env.JEV_CONTEXT_KEY_FILE;
+	});
+});

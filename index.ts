@@ -26,7 +26,7 @@ import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
 import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "./src/presend.ts";
 import { buildCandidatesAsync, extractTerms, footer } from "./src/views.ts";
-import { loadConfigWithVariant, type Config } from "./src/config.ts";
+import { keyFilePath, loadConfigWithVariant, storeKey, type Config } from "./src/config.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { appendNotes, memoryPromptSection, readMemoryFile } from "./src/memory-file.ts";
 import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "./src/policy.ts";
@@ -42,9 +42,16 @@ export default function (pi: ExtensionAPI) {
 	const { cfg, variant } = loadConfigWithVariant();
 	const prompts: PromptVariant = { ...DEFAULT_PROMPTS, ...((variant.prompts ?? {}) as Partial<PromptVariant>), viewDescriptions: { ...DEFAULT_PROMPTS.viewDescriptions, ...(((variant.prompts ?? {}) as Partial<PromptVariant>).viewDescriptions ?? {}) } };
 	const viewParams = variant.views ?? {};
-	const usingMock = cfg.forceMock || !cfg.apiKey;
-	const classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
-	const presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
+	let usingMock = cfg.forceMock || !cfg.apiKey;
+	let classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
+	let presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
+	/** Switch from the mock to jev once a key is available (from `/jev-context key`), without a restart. */
+	const useKey = (apiKey: string) => {
+		cfg.apiKey = apiKey;
+		usingMock = cfg.forceMock;
+		classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
+		presend = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey }), cfg.model, prompts);
+	};
 	/** Full text of compressed tool results, by toolCallId, for the recall tool (also persisted in result details). */
 	const fullOutputs = new Map<string, { text: string; toolName: string; args: unknown; view: string }>();
 	/** Everything the UI needs per compressed result, newest last. */
@@ -157,7 +164,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 		log({ event: "session_start", mode: cfg.mode, enabled: cfg.enabled, mock: usingMock, ledger: ledger.size, variant: variant.name ?? null });
-		if (ctx.hasUI && usingMock) ctx.ui.notify("jev-context: TYPESAFE_API_KEY not set, using mock classifier", "warning");
+		if (ctx.hasUI && usingMock && !cfg.forceMock) ctx.ui.notify("jev-context: no TypeSafe API key. Run /jev-context key (or set TYPESAFE_API_KEY). Using the mock classifier until then.", "warning");
 		status(ctx);
 	});
 
@@ -528,9 +535,19 @@ export default function (pi: ExtensionAPI) {
 	// ---- commands ----------------------------------------------------------------------
 
 	pi.registerCommand("jev-context", {
-		description: "jev-context: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | file",
+		description: "jev-context: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | file | key [api-key] (store your TypeSafe key)",
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
+			if (sub === "key" || sub.startsWith("key ")) {
+				let key = sub.slice(3).trim();
+				if (!key) key = ((await ctx.ui.input("TypeSafe API key (from console.typesafe.ai):", "ts_...")) ?? "").trim();
+				if (!key) { ctx.ui.notify("no key entered", "info"); return; }
+				const where = storeKey(key);
+				useKey(key);
+				ctx.ui.notify(`jev-context: key stored in ${where}; jev is active from the next tool result`, "info");
+				status(ctx);
+				return;
+			}
 			if (sub === "file") {
 				const text = readMemoryFile(memoryPath) || "(memory file is empty)";
 				ctx.ui.notify(text, "info");
@@ -560,7 +577,7 @@ export default function (pi: ExtensionAPI) {
 			const hit = totals.input + totals.cacheRead > 0 ? Math.round((100 * totals.cacheRead) / (totals.input + totals.cacheRead)) : 0;
 			ctx.ui.notify(
 				[
-					`mode=${cfg.mode} enabled=${cfg.enabled} classifier=${usingMock ? "mock" : cfg.model}`,
+					`mode=${cfg.mode} enabled=${cfg.enabled} classifier=${usingMock ? "mock (no key: /jev-context key)" : cfg.model} key=${process.env.TYPESAFE_API_KEY ? "env" : cfg.apiKey ? keyFilePath() : "none"}`,
 					`presend: ${presendTotals.compressed}/${presendTotals.considered} large results compressed, ≈${presendTotals.tokensSaved} tokens saved, ${presendTotals.recalls} recalls`,
 					`post-send: calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
 					`cache: read=${totals.cacheRead} uncached=${totals.input} hit=${hit}%`,

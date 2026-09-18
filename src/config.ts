@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,6 +72,36 @@ export interface Config {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** Where `/jev-context key` stores the TypeSafe API key (overridable for tests). */
+export function keyFilePath(): string {
+	return process.env.JEV_CONTEXT_KEY_FILE || join(homedir(), ".pi", "agent", "jev-context.json");
+}
+
+/** The stored key, if any. */
+export function readStoredKey(): string | undefined {
+	try {
+		const p = keyFilePath();
+		if (!existsSync(p)) return undefined;
+		const key = (JSON.parse(readFileSync(p, "utf8")) as { apiKey?: unknown }).apiKey;
+		return typeof key === "string" && key.trim() ? key.trim() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Store the key in the user's pi directory, readable only by the user. */
+export function storeKey(key: string): string {
+	const p = keyFilePath();
+	mkdirSync(dirname(p), { recursive: true });
+	writeFileSync(p, `${JSON.stringify({ apiKey: key.trim() }, null, 2)}\n`, { mode: 0o600 });
+	return p;
+}
+
+/** Key resolution: environment (or the package's .env, loaded into it), then the stored key. */
+export function resolveApiKey(): string | undefined {
+	return process.env.TYPESAFE_API_KEY || readStoredKey();
+}
+
 /** Load KEY=VALUE lines from the extension's own .env (never from the target project). */
 export function loadDotEnv(): void {
 	for (const dir of [join(HERE, ".."), HERE]) {
@@ -127,7 +158,7 @@ export function loadConfig(): Config {
 		variantFile: process.env.JEV_CONTEXT_VARIANT || undefined,
 		forceMock: process.env.JEV_CONTEXT_CLASSIFIER === "mock",
 		logFile: process.env.JEV_CONTEXT_LOG !== "0",
-		apiKey: process.env.TYPESAFE_API_KEY,
+		apiKey: resolveApiKey(),
 	};
 }
 

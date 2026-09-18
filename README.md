@@ -101,9 +101,16 @@ pi install npm:pi-jev-context            # from npm
 pi install git:github.com/dizk/pi-jev-context   # or straight from GitHub
 ```
 
-The classifier is [jev](https://typesafe.ai), TypeSafe's System One model. Put your key in the environment
-(`export TYPESAFE_API_KEY=...`) or in a `.env` file next to the installed package; without a key the extension runs
-with a mock classifier and warns at startup. For development, clone the repo and load it directly:
+The classifier is [jev](https://typesafe.ai), TypeSafe's System One model, so it needs a TypeSafe API key
+(get one at [console.typesafe.ai](https://console.typesafe.ai)). Three ways to provide it, in the order they are tried:
+
+1. `TYPESAFE_API_KEY` in the environment.
+2. `/jev-context key` inside pi: prompts for the key (or `/jev-context key ts_...`) and stores it in
+   `~/.pi/agent/jev-context.json`, readable only by you. jev is active from the next tool result, no restart.
+3. A `.env` file next to the installed package (development).
+
+Without a key the extension warns at startup and runs a mock classifier that compresses nothing.
+For development, clone the repo and load it directly:
 
 ```sh
 git clone https://github.com/dizk/pi-jev-context.git && cd pi-jev-context && npm install
@@ -111,7 +118,7 @@ echo 'TYPESAFE_API_KEY=...' > .env
 pi -e ./index.ts
 ```
 
-Inside pi: `/jev-context` shows stats, `/jev-context list` lists the latest 200 pre-send-compressed tool results with tokens
+Inside pi: `/jev-context` shows stats (and where the key comes from), `/jev-context key` stores the key, `/jev-context list` lists the latest 200 pre-send-compressed tool results with tokens
 before and after, `/jev-context diff [n]` opens an overlay for the n-th latest one showing the original output with the
 lines the model did not get marked `−` (press `t` to switch to exactly what was sent, `Esc` to close),
 `/jev-context decisions` lists post-send decisions with probabilities, `/jev-context file` prints the memory file.
