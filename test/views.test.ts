@@ -128,8 +128,8 @@ describe("testlog ids and tree terms", () => {
 		const log = ["============ test session starts ============", "collected 100 items", ...Array.from({ length: 100 }, (_, i) => `tests/test_x.py::test_case_${i} PASSED   [${i}%]`), "============ 100 passed in 1.2s ============"].join("\n");
 		const v = testlogView(log)!;
 		expect(v.text).toContain("test_case_0 PASSED");
-		expect(v.text).toContain("test_case_39 PASSED");
-		expect(v.text).not.toContain("test_case_60 PASSED");
+		expect(v.text).toContain("test_case_20 PASSED");
+		expect(v.text).not.toContain("test_case_30 PASSED");
 		expect(v.text).toContain("100 passed");
 	});
 	it("tree keeps entries matching task terms", async () => {

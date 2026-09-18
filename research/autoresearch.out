@@ -8,3 +8,9 @@
 [autoresearch] "code-behavior-relevant" objective -56.68 (best 68.48) saved 73.7% editMiss 25.0% quoteMiss 0.0% refMiss 5.4% in 27s → discard
 [autoresearch] iteration 3/8: asking openai-codex/gpt-5.6-luna
 [autoresearch] evaluating "preserve-behavior-context": Keep compact command views, but use relevant code context only for non-edit behavior analysis and retain full prose when its content may drive the next step.
+[autoresearch] "preserve-behavior-context" objective 67.33 (best 68.48) saved 72.5% editMiss 0.0% quoteMiss 0.0% refMiss 5.1% in 26s → discard
+[autoresearch] iteration 4/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "code-outline-first": Prefer complete code outlines for orientation and reserve narrower code views for explicitly named identifiers, reducing reference misses without sacrificing compact command handling.
+[autoresearch] "code-outline-first" objective 66.12 (best 68.48) saved 72.0% editMiss 0.0% quoteMiss 0.0% refMiss 5.8% in 27s → discard
+[autoresearch] iteration 5/8: asking openai-codex/gpt-5.6-luna
+[autoresearch] evaluating "code-focus-with-context": Keep compact command routing, but prefer outline over narrow focus for code unless the task explicitly identifies the needed symbols, reducing omitted-identifier misses.

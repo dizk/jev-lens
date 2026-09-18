@@ -28,6 +28,9 @@ describe("presend", () => {
 		const base = { choice: "outline" as const, probabilities: { full: 0.1, outline: 0.8, focus: 0.1 }, confidence: 0.8, needsFull: 0.1 };
 		expect(decideView(base, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, needsFull: 0.7 }, cands, cfg).kind).toBe("full");
+		expect(decideView({ ...base, needsFull: 0.4 }, cands, cfg).kind).toBe("full"); // code is stricter
+		expect(decideView({ ...base, needsFull: 0.4 }, { ...cands, kind: "prose" }, cfg).kind).toBe("outline");
+		expect(decideView({ ...base, choice: "focus", probabilities: { full: 0.1, outline: 0.1, focus: 0.8 } }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, probabilities: { full: 0.6, outline: 0.3, focus: 0.1 } }, cands, cfg).kind).toBe("full");
 		expect(decideView({ ...base, probabilities: { full: 0.4, outline: 0.5, focus: 0.1 } }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, confidence: 0.2 }, { ...cands }, { ...cfg, presendMinConfidence: 0.4 }).kind).toBe("full");

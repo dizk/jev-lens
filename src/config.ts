@@ -44,6 +44,8 @@ export interface Config {
 	presendNeedsFullAbove: number;
 	/** Send full when the "full" option itself gets more than this probability mass. */
 	presendFullMassAbove: number;
+	/** Stricter needs-full threshold for source code, where a wrong view costs an edit (jev's answers vary run to run by ±0.2). */
+	presendCodeNeedsFullAbove: number;
 	/** Send full when the choice confidence is below this (0 = off; a spread over acceptable views is not a reason to send everything). */
 	presendMinConfidence: number;
 	/** Second step for code: expand the bodies of blocks jev says the agent will need (P above this). */
@@ -101,6 +103,7 @@ export function loadConfig(): Config {
 		presendMinTokens: num("JEV_MEMORY_PRESEND_MIN_TOKENS", 1200),
 		presendNeedsFullAbove: num("JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE", 0.5),
 		presendFullMassAbove: num("JEV_MEMORY_PRESEND_FULL_MASS_ABOVE", 0.5),
+		presendCodeNeedsFullAbove: num("JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE", 0.35),
 		presendMinConfidence: num("JEV_MEMORY_PRESEND_MIN_CONFIDENCE", 0),
 		presendExpandAbove: num("JEV_MEMORY_PRESEND_EXPAND_ABOVE", 0.5),
 		model: process.env.JEV_MEMORY_MODEL || "jev-latest",

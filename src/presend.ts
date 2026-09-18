@@ -144,10 +144,13 @@ export class MockPresend implements PresendClassifier {
 export function decideView(
 	answer: { choice: ViewKind; probabilities: Record<string, number>; confidence: number; needsFull: number },
 	cands: Candidates,
-	cfg: Pick<Config, "presendNeedsFullAbove" | "presendFullMassAbove" | "presendMinConfidence">,
+	cfg: Pick<Config, "presendNeedsFullAbove" | "presendFullMassAbove" | "presendMinConfidence" | "presendCodeNeedsFullAbove">,
 ): View {
 	const full = cands.views[0];
-	if (answer.needsFull > cfg.presendNeedsFullAbove) return full;
+	const needsFullAbove = cands.kind === "code" ? Math.min(cfg.presendNeedsFullAbove, cfg.presendCodeNeedsFullAbove) : cfg.presendNeedsFullAbove;
+	if (answer.needsFull > needsFullAbove) return full;
+	// For code, "focus" alone is a locating aid; if it wins, upgrade to outline so structure comes along (the second step may expand bodies).
+	if (cands.kind === "code" && answer.choice === "focus") { const outline = cands.views.find((v) => v.kind === "outline"); if (outline) return outline; }
 	if ((answer.probabilities.full ?? 0) > cfg.presendFullMassAbove) return full;
 	if (answer.confidence < cfg.presendMinConfidence) return full;
 	return cands.views.find((v) => v.kind === answer.choice) ?? full;

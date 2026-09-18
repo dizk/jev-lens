@@ -259,9 +259,11 @@ export interface ViewParams {
 	sampleRows: number;
 	signalsCtx: number;
 	signalsTail: number;
+	/** How many passing test ids the testlog view keeps as an index (0 = none). */
+	testIds: number;
 	minShrink: number;
 }
-export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 2, signalsTail: 8, minShrink: 0.6 };
+export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 2, signalsTail: 8, testIds: 25, minShrink: 0.6 };
 
 export interface Candidates {
 	kind: ContentKind;
@@ -281,7 +283,7 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 		cands.push(v);
 	};
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
-	if (kind === "command") add(testlogView(text, P.signalsCtx));
+	if (kind === "command") add(testlogView(text, P.signalsCtx, 60, P.testIds));
 	if (kind === "listing") add(treeView(text, 8, terms));
 	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
 	if (kind === "data") add(sampleView(text, P.sampleRows));
@@ -358,7 +360,7 @@ export async function buildCandidatesAsync(toolName: string, args: unknown, text
 	try {
 		const { treeSitterBlocks, treeSitterOutline } = await import("./treesitter.ts");
 		const [blocks, outlineIdx] = await Promise.all([treeSitterBlocks(path, text), treeSitterOutline(path, text)]);
-		if (!outlineIdx || outlineIdx.length < 3) return { ...base, blocks: blocks ?? undefined };
+		if (!outlineIdx || outlineIdx.length < 2) return { ...base, blocks: blocks ?? undefined };
 		const lines = text.split("\n");
 		const full = base.views[0];
 		const outline = make("outline", lines, outlineIdx);

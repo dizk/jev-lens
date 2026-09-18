@@ -31,7 +31,7 @@ Views: `full`, `outline`, `relevant` (outline + expanded blocks), `focus`, `sign
     "needsFullInstructions": "...", "needsFullTrue": "...", "needsFullFalse": "...",
     "expandInstructions": "... block `blocks[{i}]` ...", "expandTrue": "...", "expandFalse": "..."
   },
-  "views": { "headLines": 40, "tailLines": 20, "focusCtx": 3, "sampleRows": 12, "signalsCtx": 2, "signalsTail": 8, "minShrink": 0.6 }
+  "views": { "headLines": 40, "tailLines": 20, "focusCtx": 3, "sampleRows": 12, "signalsCtx": 2, "signalsTail": 8, "testIds": 25, "minShrink": 0.6 }
 }
 ```
 

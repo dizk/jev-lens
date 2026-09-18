@@ -114,7 +114,9 @@ export async function treeSitterBlocks(path: string, text: string, maxBlocks = 4
 			const inner = c.namedChildren.find((n) => n && BLOCK_TYPES.has(n.type));
 			if (inner) node = inner;
 		}
-		const isBlock = BLOCK_TYPES.has(node.type) && endLine > startLine;
+		// Multi-line top-level assignments (config dicts, tables, constants) are blocks too.
+		const isBigAssignment = (node.type === "expression_statement" || node.type === "assignment") && endLine - startLine >= 3;
+		const isBlock = (BLOCK_TYPES.has(node.type) || isBigAssignment) && endLine > startLine;
 		if (!isBlock) { pendingComment = undefined; if (blocks.length === 0) headerEnd = endLine; continue; }
 		const from = (pendingComment ?? startLine) + 1;
 		pendingComment = undefined;
