@@ -31,6 +31,7 @@ describe("presend", () => {
 		expect(decideView({ ...base, needsFull: 0.4 }, cands, { ...cfg, presendCodeNeedsFullAbove: 0.35 }).kind).toBe("full"); // code can be stricter
 		expect(decideView({ ...base, needsFull: 0.4 }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, choice: "focus", probabilities: { full: 0.1, outline: 0.1, focus: 0.8 } }, cands, cfg).kind).toBe("outline");
+		expect(decideView({ ...base, needsFull: 0.9, probabilities: { full: 0.9, outline: 0.1 } }, cands, { ...cfg, presendCodePolicy: "outline" }).kind).toBe("outline");
 		expect(decideView({ ...base, probabilities: { full: 0.6, outline: 0.3, focus: 0.1 } }, cands, cfg).kind).toBe("full");
 		expect(decideView({ ...base, probabilities: { full: 0.4, outline: 0.5, focus: 0.1 } }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, confidence: 0.2 }, { ...cands }, { ...cfg, presendMinConfidence: 0.4 }).kind).toBe("full");

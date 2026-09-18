@@ -1,0 +1,1 @@
+{ "name": "code-outline-expand-0.35", "hypothesis": "Outline-first for code with a lower expansion threshold (0.35) so borderline blocks get their bodies; trades some savings for fewer block-level misses.", "config": { "presendCodePolicy": "outline", "presendExpandAbove": 0.35 } }

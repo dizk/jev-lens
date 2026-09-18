@@ -1,0 +1,1 @@
+{ "name": "code-outline-need", "hypothesis": "Code is never sent full: outline plus the blocks the second step expands with the current 'will it need the body' question. Edit-miss at block level is the real risk of this policy.", "config": { "presendCodePolicy": "outline" } }

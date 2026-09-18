@@ -46,6 +46,8 @@ export interface Config {
 	presendFullMassAbove: number;
 	/** Separate needs-full threshold for command output (test runs), where "exact full text" is rarely what the agent needs. */
 	presendCommandNeedsFullAbove: number;
+	/** Code policy: "gate" = jev's needs-full/full-mass gates decide (default); "outline" = code is always sent as outline plus the blocks the second step expands, never full. */
+	presendCodePolicy: "gate" | "outline";
 	/** Stricter needs-full threshold for source code, where a wrong view costs an edit (jev's answers vary run to run by ±0.2). */
 	presendCodeNeedsFullAbove: number;
 	/** Send full when the choice confidence is below this (0 = off; a spread over acceptable views is not a reason to send everything). */
@@ -109,6 +111,7 @@ export function loadConfig(): Config {
 		presendFullMassAbove: num("JEV_MEMORY_PRESEND_FULL_MASS_ABOVE", 0.5),
 		presendCodeNeedsFullAbove: num("JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE", 0.5),
 		presendCommandNeedsFullAbove: num("JEV_MEMORY_PRESEND_COMMAND_NEEDS_FULL_ABOVE", 0.65),
+		presendCodePolicy: process.env.JEV_MEMORY_PRESEND_CODE_POLICY === "outline" ? "outline" : "gate",
 		presendMinConfidence: num("JEV_MEMORY_PRESEND_MIN_CONFIDENCE", 0),
 		presendExpandAbove: num("JEV_MEMORY_PRESEND_EXPAND_ABOVE", 0.5),
 		model: process.env.JEV_MEMORY_MODEL || "jev-latest",

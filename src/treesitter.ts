@@ -167,12 +167,46 @@ export async function treeSitterBlocks(path: string, text: string, maxBlocks = 4
 	return out.slice(0, maxBlocks);
 }
 
+const SIGNATURE_TYPES = new Set(["function_declaration", "function_definition", "method_definition", "method_declaration", "constructor_declaration", "function_item", "decorated_definition", "class_declaration", "class_definition", "interface_declaration", "struct_item", "enum_item", "trait_item", "impl_item", "object_declaration", "companion_object", "type_alias_declaration", "type_item", "record_declaration", "enum_declaration", "abstract_class_declaration", "singleton_method", "method", "class", "module", "func_literal", "generator_function_declaration", "lexical_declaration", "property_declaration"]);
+
+/** 0-based rows of every declaration signature in the tree, at any nesting depth (methods in small classes, nested functions). */
+async function signatureRows(path: string, text: string): Promise<number[] | undefined> {
+	const lang = languageForPath(path);
+	if (!lang) return undefined;
+	const mod = await init();
+	const L = await language(lang);
+	if (!mod || !L) return undefined;
+	const parser = new mod.Parser();
+	parser.setLanguage(L);
+	const tree = parser.parse(text);
+	if (!tree) return undefined;
+	const rows = new Set<number>();
+	const walk = (n: import("web-tree-sitter").Node, depth: number) => {
+		if (depth > 6) return;
+		for (const c of n.namedChildren) {
+			if (!c) continue;
+			if (SIGNATURE_TYPES.has(c.type)) {
+				// property/lexical declarations only when they hold a function (arrow functions, lambdas) or are top-level
+				if ((c.type === "lexical_declaration" || c.type === "property_declaration") && depth > 0 && !/=>|lambda|fun\b|function\b/.test(text.split("\n")[c.startPosition.row])) continue;
+				rows.add(c.startPosition.row);
+			}
+			walk(c, depth + 1);
+		}
+	};
+	walk(tree.rootNode, 0);
+	tree.delete();
+	parser.delete();
+	return [...rows].sort((a, b) => a - b);
+}
+
 /** Signature lines (block starts) as an outline index list, 0-based. */
 export async function treeSitterOutline(path: string, text: string): Promise<number[] | undefined> {
-	const blocks = await treeSitterBlocks(path, text);
-	if (!blocks) return undefined;
-	const idx: number[] = [];
+	const sigs = await signatureRows(path, text);
+	if (!sigs) return undefined;
+	const blocks = (await treeSitterBlocks(path, text)) ?? [];
+	const idx: number[] = [...sigs];
 	const lines = text.split("\n");
+	if (blocks.length === 0) for (let i = 0; i < Math.min(lines.length, 60); i++) if (/^\s*(import|from|require|use|package|#include|using)\b/.test(lines[i])) idx.push(i);
 	for (const b of blocks) {
 		if (b.name.startsWith("(header")) {
 			// imports plus any one-line declarations (Kotlin data classes, type aliases, constants) that were too short to be blocks

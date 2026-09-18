@@ -52,7 +52,8 @@ describe("language support (tree-sitter + regex fallback)", () => {
 		for (const sig of ["export interface Entry", "export const ALIASES", "export class Ledger", "export function formatMoney", "export default function loadConfig"]) expect(names.some((n) => n.startsWith(sig)), sig).toBe(true);
 		const outline = (await treeSitterOutline("sample.ts", t))!.map((i) => t.split("\n")[i]);
 		expect(outline.some((l) => l.startsWith("export type Section"))).toBe(true);
-		const c = await buildCandidatesAsync("read", { path: "sample.ts" }, t, []);
+		expect(outline.some((l) => l.trim().startsWith("add(entry: Entry)"))).toBe(true); // methods of small classes are signatures too
+		const c = await buildCandidatesAsync("read", { path: "sample.ts" }, t, [], { minShrink: 0.95 });
 		expect(c.views.map((v) => v.kind)).toContain("outline");
 		expect(c.blocks!.length).toBeGreaterThanOrEqual(5);
 	});
