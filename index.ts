@@ -15,10 +15,13 @@
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "./src/pi-types.ts";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { createBashTool, createFindTool, createGrepTool, createLsTool, createReadTool } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
+import { DiffOverlay, listLines, savingsLine, type CompressedRecord } from "./src/ui.ts";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
 import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "./src/presend.ts";
@@ -44,6 +47,10 @@ export default function (pi: ExtensionAPI) {
 	const presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
 	/** Full text of compressed tool results, by toolCallId, for the recall tool (also persisted in result details). */
 	const fullOutputs = new Map<string, { text: string; toolName: string; args: unknown; view: string }>();
+	/** Everything the UI needs per compressed result, newest last. */
+	const records: CompressedRecord[] = [];
+	const recordById = new Map<string, CompressedRecord>();
+	const remember = (r: CompressedRecord) => { records.push(r); recordById.set(r.id, r); if (records.length > 200) { const old = records.shift(); if (old) recordById.delete(old.id); } };
 	let lastAssistantText = "";
 	let presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
 
@@ -92,6 +99,8 @@ export default function (pi: ExtensionAPI) {
 		firstUser = "";
 		latestUser = "";
 		fullOutputs.clear();
+		records.length = 0;
+		recordById.clear();
 		presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
 		memoryPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-memory.md");
 		memorySnapshot = readMemoryFile(memoryPath);
@@ -108,8 +117,12 @@ export default function (pi: ExtensionAPI) {
 				if (!firstUser) firstUser = t;
 				latestUser = t;
 			} else if (entry.message.role === "toolResult") {
-				const d = (entry.message as { details?: { jevMemory?: { full?: string; view?: string; args?: unknown } } }).details?.jevMemory;
-				if (d?.full) fullOutputs.set(entry.message.toolCallId, { text: d.full, toolName: entry.message.toolName, args: d.args, view: d.view ?? "?" });
+				const d = (entry.message as { details?: { jevMemory?: { full?: string; view?: string; args?: unknown; included?: number[]; kind?: string; needsFull?: number; p?: Record<string, number> } } }).details?.jevMemory;
+				if (d?.full) {
+					fullOutputs.set(entry.message.toolCallId, { text: d.full, toolName: entry.message.toolName, args: d.args, view: d.view ?? "?" });
+					const sent = contentText(entry.message.content).replace(/\n\n\[jev-memory:[\s\S]*$/, "");
+					remember({ id: entry.message.toolCallId, toolName: entry.message.toolName, args: d.args, kind: d.kind ?? "?", view: d.view ?? "?", tokensBefore: estimateTokensOfText(d.full), tokensAfter: estimateTokensOfText(sent), full: d.full, sent, included: d.included ?? [], needsFull: d.needsFull, pFull: d.p?.full, recalls: 0, at: entry.message.timestamp });
+				}
 			}
 		}
 		log({ event: "session_start", mode: cfg.mode, enabled: cfg.enabled, mock: usingMock, ledger: ledger.size, variant: variant.name ?? null });
@@ -340,7 +353,8 @@ export default function (pi: ExtensionAPI) {
 			presendTotals.compressed++;
 			presendTotals.tokensSaved += tokens - estimateTokensOfText(view.text);
 			fullOutputs.set(event.toolCallId, { text, toolName: event.toolName, args: event.input, view: view.kind });
-			const details = { ...((event.details as object) ?? {}), jevMemory: { full: text, view: view.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull } };
+			remember({ id: event.toolCallId, toolName: event.toolName, args: event.input, kind: cands.kind, view: view.kind, tokensBefore: tokens, tokensAfter: estimateTokensOfText(view.text), full: text, sent: view.text, included: view.included, needsFull: answer.needsFull, pFull: answer.probabilities.full, recalls: 0, at: Date.now() });
+			const details = { ...((event.details as object) ?? {}), jevMemory: { full: text, view: view.kind, kind: cands.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull, included: view.included } };
 			status(ctx);
 			return { content: [{ type: "text", text: view.text + footer(view, event.toolCallId, totalLines) }], details };
 		} catch (err) {
@@ -360,6 +374,8 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params) {
 			presendTotals.recalls++;
+			const rec = recordById.get(params.id);
+			if (rec) rec.recalls++;
 			const hit = fullOutputs.get(params.id);
 			log({ event: "recall", id: params.id, found: !!hit, lines: params.lines, pattern: params.pattern });
 			if (!hit) return { content: [{ type: "text", text: `No stored output for id ${params.id}. Re-run the original tool instead.` }], details: { id: params.id, lines: 0 } };
@@ -387,15 +403,80 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ---- TUI: built-in tools re-registered so compressed results show what was saved -----------
+
+	if (process.env.JEV_MEMORY_UI !== "0") {
+		const cwd = process.cwd();
+		const originals: Record<string, ReturnType<typeof createReadTool>> = {
+			read: createReadTool(cwd) as ReturnType<typeof createReadTool>,
+			bash: createBashTool(cwd) as unknown as ReturnType<typeof createReadTool>,
+			grep: createGrepTool(cwd) as unknown as ReturnType<typeof createReadTool>,
+			find: createFindTool(cwd) as unknown as ReturnType<typeof createReadTool>,
+			ls: createLsTool(cwd) as unknown as ReturnType<typeof createReadTool>,
+		};
+		for (const [name, original] of Object.entries(originals)) {
+			const o = original as unknown as { description: string; parameters: never; execute: (...a: unknown[]) => Promise<unknown>; renderCall?: (...a: unknown[]) => unknown; renderResult?: (...a: unknown[]) => unknown; promptSnippet?: string; promptGuidelines?: string[] };
+			pi.registerTool({
+				name,
+				label: name,
+				description: o.description,
+				parameters: o.parameters,
+				promptSnippet: o.promptSnippet,
+				promptGuidelines: o.promptGuidelines,
+				async execute(toolCallId: string, params: unknown, signal: AbortSignal | undefined, onUpdate: unknown, ctx: unknown) {
+					return (o.execute as (id: string, p: unknown, s: unknown, u: unknown, c: unknown) => Promise<never>)(toolCallId, params, signal, onUpdate, ctx);
+				},
+				renderCall(args: unknown, theme: Theme, context: unknown) {
+					if (o.renderCall) return (o.renderCall as (a: unknown, t: unknown, c: unknown) => never)(args, theme, context);
+					const a = args as Record<string, unknown>;
+					const what = typeof a.path === "string" ? a.path : typeof a.command === "string" ? a.command : typeof a.pattern === "string" ? a.pattern : "";
+					return new Text(theme.fg("toolTitle", theme.bold(`${name} `)) + theme.fg("accent", String(what)), 0, 0);
+				},
+				renderResult(result: { content: unknown }, options: { expanded: boolean }, theme: Theme, context: { toolCallId: string }) {
+					const rec = recordById.get(context.toolCallId);
+					if (!rec) {
+						if (o.renderResult) return (o.renderResult as (r: unknown, op: unknown, t: unknown, c: unknown) => never)(result, options, theme, context);
+						const text = contentText(result.content);
+						const lines = text.split("\n");
+						let out = theme.fg("success", `${lines.length} lines`);
+						if (options.expanded) out += "\n" + lines.slice(0, 200).join("\n");
+						else out += theme.fg("dim", "  " + lines[0]?.slice(0, 80));
+						return new Text(out, 0, 0);
+					}
+					let out = savingsLine(rec, theme);
+					if (options.expanded) out += "\n" + rec.sent;
+					else out += "\n" + theme.fg("dim", rec.sent.split("\n").slice(0, 3).join("\n"));
+					return new Text(out, 0, 0);
+				},
+			} as never);
+		}
+	}
+
 	// ---- commands ----------------------------------------------------------------------
 
 	pi.registerCommand("jev-memory", {
-		description: "Show jev-memory stats, decisions, or the memory file (/jev-memory [decisions|file])",
+		description: "jev-memory: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | file",
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
 			if (sub === "file") {
 				const text = readMemoryFile(memoryPath) || "(memory file is empty)";
 				ctx.ui.notify(text, "info");
+				return;
+			}
+			if (sub.startsWith("diff")) {
+				const n = Number(sub.slice(4).trim() || "1");
+				const rec = records[records.length - (Number.isFinite(n) && n >= 1 ? n : 1)];
+				if (!rec) { ctx.ui.notify("no compressed tool result to show yet", "info"); return; }
+				if (!ctx.hasUI || ctx.mode !== "tui") { ctx.ui.notify(listLines([rec], { fg: (_c, t) => t, bold: (t) => t }).join("\n"), "info"); return; }
+				await ctx.ui.custom<void>((tui, theme, _kb, done) => {
+					const height = Math.max(12, Math.floor(((tui as { terminalHeight?: number }).terminalHeight ?? process.stdout.rows ?? 40) * 0.85));
+					const overlay = new DiffOverlay(rec, theme, height, () => done(), () => tui.requestRender());
+					return { render: (w) => overlay.render(w), handleInput: (d) => overlay.handleInput(d), invalidate: () => overlay.invalidate() };
+				}, { overlay: true, overlayOptions: { width: "92%", maxHeight: "90%", anchor: "center" } });
+				return;
+			}
+			if (sub === "list") {
+				ctx.ui.notify(listLines(records, { fg: (_c, t) => t, bold: (t) => t }).join("\n"), "info");
 				return;
 			}
 			if (sub === "decisions") {

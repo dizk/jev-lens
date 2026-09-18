@@ -25,6 +25,7 @@
   "dependencies": {
     "@binclusive/tree-sitter-kotlin-wasm": "^0.1.0",
     "@earendil-works/pi-coding-agent": "^0.84.3",
+    "@earendil-works/pi-tui": "^0.84.3",
     "@typesafe-ai/sdk": "^0.6.0",
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "typebox": "^1.3.33",

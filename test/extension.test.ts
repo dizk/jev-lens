@@ -160,3 +160,31 @@ describe("pre-send compression and recall (mock)", () => {
 		expect(await emit("tool_result", { toolName: "recall", toolCallId: "r", input: { id: "c7" }, content: [{ type: "text", text: "x".repeat(20000) }], isError: false }, ctx)).toBeUndefined();
 	});
 });
+
+describe("TUI integration", () => {
+	it("re-registers built-in tools and renders a savings header for compressed results", async () => {
+		const mod: any = await import("../index.ts");
+		const { pi, emit, entries, tools, commands } = fakePi();
+		mod.default(pi);
+		for (const t of ["read", "bash", "grep", "find", "ls", "recall"]) expect(tools.has(t), t).toBe(true);
+		const ctx = ctxFor(mkdtempSync(join(tmpdir(), "jevext-")), entries);
+		await emit("session_start", { reason: "startup" }, ctx);
+		const { readFileSync } = await import("node:fs");
+		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const r = await emit("tool_result", { toolName: "read", toolCallId: "c9", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], details: undefined, isError: false }, ctx);
+		expect(r.details.jevMemory.included.length).toBeGreaterThan(3);
+		const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
+		const comp = tools.get("read").renderResult({ content: r.content }, { expanded: false }, theme, { toolCallId: "c9" });
+		const text = String(comp.render(200).join("\n"));
+		expect(text).toContain("jev-memory");
+		expect(text).toMatch(/of \d+ tokens \(−\d+ %\)/);
+		const plain = tools.get("read").renderResult({ content: [{ type: "text", text: "a\nb" }] }, { expanded: false }, theme, { toolCallId: "nope" });
+		expect(String(plain.render(80).join("\n"))).toContain("2 lines");
+		const notes: string[] = [];
+		const cmdCtx = { ...ctx, hasUI: false, mode: "print", ui: { notify: (m: string) => notes.push(m), setStatus() {} } };
+		await commands.get("jev-memory").handler("diff", cmdCtx);
+		expect(notes[0]).toContain("src/categories.js");
+		await commands.get("jev-memory").handler("list", cmdCtx);
+		expect(notes[1]).toMatch(/outline|relevant/);
+	});
+});
