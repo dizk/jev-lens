@@ -173,8 +173,11 @@ gain came from pushing command output towards `signals`; the `testlog` and `tree
 tokens by construction. Lesson: on this problem, new code-built views moved the number (55.9 → 69.3 % on holdout with
 zero edit-misses), prompt wording did not. Round 2 of the loop (new views, corrected ref-miss, 60 training trajectories, 8 iterations, one kept: train 63.8 → 68.5)
 is in `research/round2/`; on the holdout its winner scores 64.9 % / objective 61.8 against 64.7 % / 61.7 for the
-default, again within noise. Two rounds, same lesson: with jev's ±0.2 run-to-run variance and a 50 to 60 trajectory
-training slice, prompt-wording gains of 5 to 10 points on train are noise-level on holdout. The loop is still useful as
+default, again within noise. Round 3 used **gpt-6-astra** as the researcher (100 training trajectories, 10 iterations, `research/round3/`). It
+behaved differently from luna: it left the prompts alone and swept view parameters (signals context, tail length,
+test-id count, the size gate for medium results), keeping two: `signalsCtx` 2 → 0 (train 64.5 → 67.4). On the holdout
+that variant scores 64.7 % / objective 61.6, identical to the default (64.7 % / 61.7). Three rounds, same lesson: with jev's ±0.2 run-to-run variance and a 50 to 100 trajectory
+training slice, gains of 3 to 10 points on train are noise-level on holdout, whether the researcher edits prompt wording (luna) or view parameters (astra). The loop is still useful as
 a regression guard and for parameter sweeps (thresholds, `testIds`, context sizes), and two of its discards were
 informative: every variant that pushed code towards `focus` or `relevant` produced 25 % edit-miss on train. The researcher only touches text and numbers; the view builders are code
 and stay fixed within a loop.

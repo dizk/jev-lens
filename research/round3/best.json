@@ -1,0 +1,68 @@
+{
+ "variant": {
+  "name": "signals-matches-only",
+  "hypothesis": "Reducing signals context previously improved command savings without edit misses, whereas shortening the tail hurt results; removing the remaining context line while retaining the best variant's eight-line tail tests further savings without changing code-edit gates.",
+  "views": {
+   "signalsCtx": 0
+  }
+ },
+ "objective": 67.41602828542943,
+ "summary": {
+  "results": 670,
+  "compressed": 526,
+  "tokens": 2396196,
+  "sent": 712824,
+  "savedPct": 70.25184918095181,
+  "editable": 5,
+  "editMiss": 0,
+  "editMissPct": 0,
+  "quoteMiss": 4,
+  "quoteMissPct": 0.5970149253731343,
+  "refMiss": 11,
+  "refMissPct": 1.6417910447761195,
+  "views": {
+   "signals": 321,
+   "full": 144,
+   "testlog": 96,
+   "relevant": 34,
+   "outline": 28,
+   "tree": 27,
+   "focus": 18,
+   "head_tail": 2
+  },
+  "byKind": {
+   "command": {
+    "n": 479,
+    "savedPct": 77.90266933653939,
+    "editMissPct": 0,
+    "refMissPct": 1.2526096033402923
+   },
+   "code": {
+    "n": 110,
+    "savedPct": 24.57252620762027,
+    "editMissPct": 0,
+    "refMissPct": 1.8181818181818181
+   },
+   "prose": {
+    "n": 42,
+    "savedPct": 66.3303640588691,
+    "editMissPct": 0,
+    "refMissPct": 4.761904761904762
+   },
+   "listing": {
+    "n": 36,
+    "savedPct": 54.804521340151986,
+    "editMissPct": 0,
+    "refMissPct": 2.7777777777777777
+   },
+   "data": {
+    "n": 3,
+    "savedPct": 0,
+    "editMissPct": 0,
+    "refMissPct": 0
+   }
+  },
+  "objective": 67.41602828542943,
+  "meanMs": 323.32089552238807
+ }
+}

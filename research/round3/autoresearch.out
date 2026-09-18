@@ -1,0 +1,100 @@
+[autoresearch] baseline evaluation
+[autoresearch] baseline objective 64.49 saved 66.6% editMiss 0.0%
+[autoresearch] iteration 1/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "command-outcome-gate": Command outputs dominate volume and already compress safely; distinguishing outcome checks from exact-content reads should increase command savings while preserving the zero edit-miss baseline.
+[autoresearch] "command-outcome-gate" objective 59.86 (best 64.49) saved 62.1% editMiss 0.0% quoteMiss 0.5% refMiss 1.4% in 37s → discard
+[autoresearch] iteration 2/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-tighter-context": The gate rewrite reduced savings without improving edit safety; retaining baseline selection and narrowing signals context should increase savings on the 268 signals views while preserving diagnostic lines and code-edit coverage.
+[autoresearch] "signals-tighter-context" objective 66.65 (best 64.49) saved 68.6% editMiss 0.0% quoteMiss 0.3% refMiss 1.3% in 40s → KEEP
+[autoresearch] iteration 3/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-shorter-tail": Narrowing signals context increased command savings without edit misses; reducing the unconditional tail from eight lines to four should remove more routine output while retaining diagnostic matches and final outcome lines.
+[autoresearch] "signals-shorter-tail" objective 65.75 (best 66.65) saved 68.0% editMiss 0.0% quoteMiss 0.3% refMiss 1.7% in 39s → discard
+[autoresearch] iteration 4/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-matches-only": Reducing signals context previously improved command savings without edit misses, whereas shortening the tail hurt results; removing the remaining context line while retaining the best variant's eight-line tail tests further savings without changing code-edit gates.
+[autoresearch] "signals-matches-only" objective 67.42 (best 66.65) saved 70.3% editMiss 0.0% quoteMiss 0.6% refMiss 1.6% in 38s → KEEP
+[autoresearch] iteration 5/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "matches-only-longer-tail": Removing signals context improved savings but increased quote and reference misses; extending the tail from eight to twelve lines may recover useful final details while retaining most savings and leaving code-edit gates unchanged.
+[autoresearch] "matches-only-longer-tail" objective 61.38 (best 67.42) saved 63.8% editMiss 0.0% quoteMiss 0.5% refMiss 1.5% in 38s → discard
+[autoresearch] iteration 6/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "signals-purpose-description": Longer tails lost substantial command savings; clarifying that matches-only signals omit traceback context may reduce quote and reference misses through targeted testlog selection without changing code-edit gates.
+[autoresearch] "signals-purpose-description" objective 56.91 (best 67.42) saved 59.2% editMiss 0.0% quoteMiss 0.5% refMiss 1.4% in 38s → discard
+[autoresearch] iteration 7/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "relevant-edit-ready-description": Signals description changes lost command savings, while code savings remain low despite zero edit misses; clarifying that relevant preserves exact expanded bodies may improve code savings without changing full-text or expansion gates.
+[autoresearch] "relevant-edit-ready-description" objective 63.39 (best 67.42) saved 65.8% editMiss 0.0% quoteMiss 0.5% refMiss 1.5% in 39s → discard
+[autoresearch] iteration 8/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "fewer-test-identifiers": Recent description changes reduced command savings; lowering testIds from 25 to 15 tests a smaller test-output view while preserving the best signals settings and unchanged code-edit gates.
+[autoresearch] "fewer-test-identifiers" objective 64.88 (best 67.42) saved 67.0% editMiss 0.0% quoteMiss 0.3% refMiss 1.5% in 38s → discard
+[autoresearch] iteration 9/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "compress-medium-results": Description and test-view changes lost savings while edit misses remained zero; lowering the size threshold to 1000 tokens should extend the best variant's compression to more command outputs without weakening full-text or code-expansion gates.
+[autoresearch] "compress-medium-results" objective 63.00 (best 67.42) saved 65.0% editMiss 0.0% quoteMiss 0.3% refMiss 1.5% in 44s → discard
+[autoresearch] iteration 10/10: asking openai-codex/gpt-6-astra
+[autoresearch] evaluating "tighter-focus-context": Signals-context reduction remains the only successful change; reducing focus context from three lines to two tests similar savings around identifier matches while retaining the best signals settings and unchanged edit-safety gates.
+[autoresearch] "tighter-focus-context" objective 63.95 (best 67.42) saved 66.5% editMiss 0.0% quoteMiss 0.3% refMiss 2.0% in 39s → discard
+{
+ "variant": {
+  "name": "signals-matches-only",
+  "hypothesis": "Reducing signals context previously improved command savings without edit misses, whereas shortening the tail hurt results; removing the remaining context line while retaining the best variant's eight-line tail tests further savings without changing code-edit gates.",
+  "views": {
+   "signalsCtx": 0
+  }
+ },
+ "objective": 67.41602828542943,
+ "summary": {
+  "results": 670,
+  "compressed": 526,
+  "tokens": 2396196,
+  "sent": 712824,
+  "savedPct": 70.25184918095181,
+  "editable": 5,
+  "editMiss": 0,
+  "editMissPct": 0,
+  "quoteMiss": 4,
+  "quoteMissPct": 0.5970149253731343,
+  "refMiss": 11,
+  "refMissPct": 1.6417910447761195,
+  "views": {
+   "signals": 321,
+   "full": 144,
+   "testlog": 96,
+   "relevant": 34,
+   "outline": 28,
+   "tree": 27,
+   "focus": 18,
+   "head_tail": 2
+  },
+  "byKind": {
+   "command": {
+    "n": 479,
+    "savedPct": 77.90266933653939,
+    "editMissPct": 0,
+    "refMissPct": 1.2526096033402923
+   },
+   "code": {
+    "n": 110,
+    "savedPct": 24.57252620762027,
+    "editMissPct": 0,
+    "refMissPct": 1.8181818181818181
+   },
+   "prose": {
+    "n": 42,
+    "savedPct": 66.3303640588691,
+    "editMissPct": 0,
+    "refMissPct": 4.761904761904762
+   },
+   "listing": {
+    "n": 36,
+    "savedPct": 54.804521340151986,
+    "editMissPct": 0,
+    "refMissPct": 2.7777777777777777
+   },
+   "data": {
+    "n": 3,
+    "savedPct": 0,
+    "editMissPct": 0,
+    "refMissPct": 0
+   }
+  },
+  "objective": 67.41602828542943,
+  "meanMs": 323.32089552238807
+ }
+}
