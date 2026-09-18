@@ -150,8 +150,11 @@ The last three rows trade about 4 points of savings for halving ref-miss: the `t
 test ids (agents pick one to re-run), and `tree` keeps entries matching task terms. Under the objective's weights that
 looks like a small loss; I chose the safer default because a ref-miss is a real "the agent learned something from what we
 dropped", while the 4 points are cheap tokens. `testIds` is a view parameter, set it to 0 for the leaner variant.
-One run (v6) showed a single edit-miss caused by jev choosing `focus` for a code file with low confidence; jev's answers
-vary by about ±0.2 between identical runs, so thresholds near 0.5 flip. The fix that costs nothing is structural: for code,
+One run (v6) showed a single edit-miss caused by jev choosing `focus` for a code file with low confidence. I first
+blamed jev's run-to-run variance for that; a direct measurement (30 trajectories scored twice, 179 paired results)
+says otherwise: needs-full answers differ by 0.008 on average (max 0.06), P(full) by 0.016 (max 0.08), and 3.4 % of
+results flip between full and compressed. The flip in v6 came from a changed candidate set (new views shift the Choice
+distribution), not from noise. So "ask twice and average" is not worth a second call; the structural fix below is. The fix that costs nothing is structural: for code,
 `focus` is upgraded to `outline` (and then possibly `relevant`), which closed that case in the runs after.
 
 Per kind, current default: command 73.2 % saved (ref-miss 1.5 %), code 28.3 % (2.4 %), prose 53.3 % (0 %), listing 47.2 % (4.4 %).
@@ -176,8 +179,8 @@ is in `research/round2/`; on the holdout its winner scores 64.9 % / objective 61
 default, again within noise. Round 3 used **gpt-6-astra** as the researcher (100 training trajectories, 10 iterations, `research/round3/`). It
 behaved differently from luna: it left the prompts alone and swept view parameters (signals context, tail length,
 test-id count, the size gate for medium results), keeping two: `signalsCtx` 2 → 0 (train 64.5 → 67.4). On the holdout
-that variant scores 64.7 % / objective 61.6, identical to the default (64.7 % / 61.7). Three rounds, same lesson: with jev's ±0.2 run-to-run variance and a 50 to 100 trajectory
-training slice, gains of 3 to 10 points on train are noise-level on holdout, whether the researcher edits prompt wording (luna) or view parameters (astra). The loop is still useful as
+that variant scores 64.7 % / objective 61.6, identical to the default (64.7 % / 61.7). Three rounds, same lesson: with a 50 to 100 trajectory training slice (jev itself is nearly
+deterministic: 3.4 % of decisions flip between identical runs), gains of 3 to 10 points on train are sampling noise on holdout, whether the researcher edits prompt wording (luna) or view parameters (astra). The loop is still useful as
 a regression guard and for parameter sweeps (thresholds, `testIds`, context sizes), and two of its discards were
 informative: every variant that pushed code towards `focus` or `relevant` produced 25 % edit-miss on train. The researcher only touches text and numbers; the view builders are code
 and stay fixed within a loop.

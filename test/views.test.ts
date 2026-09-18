@@ -140,3 +140,26 @@ describe("testlog ids and tree terms", () => {
 		expect(v.text).not.toContain("test_30.py");
 	});
 });
+
+describe("matches and log views", () => {
+	it("matches groups grep output by file", async () => {
+		const { matchesView } = await import("../src/views.ts");
+		const out = Array.from({ length: 30 }, (_, i) => `src/a.py:${i + 1}:    value = compute(${i})`).concat(Array.from({ length: 4 }, (_, i) => `src/b.py:${i + 10}:    compute()`)).join("\n");
+		const v = matchesView(out, 6)!;
+		expect(v.kind).toBe("matches");
+		expect(v.text).toContain("src/a.py:6:");
+		expect(v.text).not.toContain("src/a.py:20:");
+		expect(v.text).toContain("src/b.py:13:");
+		expect(matchesView("just some text\nno matches", 6)).toBeUndefined();
+	});
+	it("log collapses repeated templates", async () => {
+		const { logView } = await import("../src/views.ts");
+		const out = Array.from({ length: 80 }, (_, i) => `2025-01-01 10:00:${String(i).padStart(2, "0")} INFO worker processed item ${i} in 0.${i}s`).concat(["ERROR: item 81 failed", "done"]).join("\n");
+		const v = logView(out)!;
+		expect(v.kind).toBe("log");
+		expect(v.lines).toBeLessThan(15);
+		expect(v.text).toContain("processed item 0");
+		expect(v.text).toContain("ERROR: item 81 failed");
+		expect(logView("a\nb\nc")).toBeUndefined();
+	});
+});

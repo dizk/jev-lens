@@ -3,7 +3,7 @@
  * text (never generated), with line numbers so the agent can ask for exact ranges later.
  */
 
-export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "tree" | "sample" | "head_tail";
+export type ViewKind = "full" | "outline" | "relevant" | "focus" | "signals" | "testlog" | "tree" | "matches" | "log" | "sample" | "head_tail";
 
 export interface View {
 	kind: ViewKind;
@@ -62,7 +62,7 @@ const SIGNAL_RE = /\b(error|fail(ed|ing|ure)?|exception|traceback|panic|fatal|wa
 
 /** Collapse decorative runs (=====, -----, ......) and very long lines so views stay small. */
 export function tidyLine(l: string): string {
-	let out = l.replace(/([=\-_.*#~])\1{24,}/g, (m) => m.slice(0, 24) + "…");
+	let out = l.replace(/([=\-_.*#~])\1{24,}/g, (m) => m.slice(0, 24) + "…").replace(/((?:[=\-_.*#~] ){12,})/g, (m) => m.slice(0, 24) + "…").replace(/(\S)[ \t]{8,}(?=\S)/g, "$1  ").trimEnd();
 	if (out.length > 400) out = out.slice(0, 400) + " …";
 	return out;
 }
@@ -144,7 +144,7 @@ export function signalsView(text: string, ctx = 2, tail = 8): View {
 
 const TEST_MARKERS = /test session starts|passed|failed|FAILED|ERROR|✖|✔|not ok|^ok \d|Tests:|Test Suites:|# (pass|fail|tests)|PASS |FAIL |AssertionError|assert /m;
 const TEST_FAIL_LINE = /^(FAILED|ERROR) |^E\s{2,}|AssertionError|^\s*assert |✖|not ok|^\s+at .*\(|Error:|Exception|Traceback|^\s*File ".*", line \d+/;
-const TEST_SECTION = /^=+ (FAILURES|ERRORS|short test summary info|warnings summary) =+|^_{3,} .* _{3,}$|^(ℹ|✖) |^# (Subtest|Failure)/;
+const TEST_SECTION = /^=+ (FAILURES|ERRORS|short test summary info|warnings summary) =+|^_{3,} .* _{3,}$|^(_ ){5,}_?\s*$|^\[\.\.\. Observation truncated|^(ℹ|✖) |^# (Subtest|Failure)/;
 const TEST_SUMMARY = /^=+ .*(passed|failed|error|skipped|deselected|xfailed|no tests ran).* =+$|^(Tests:|Test Suites:|Time:|Ran \d+ tests|OK|FAILED \(|ℹ (pass|fail|tests|duration)|# (pass|fail|tests))/;
 
 /** Is this command output a test run? */
@@ -174,6 +174,21 @@ export function testlogView(text: string, ctx = 2, maxFailLines = 60, maxIds = 2
 			continue;
 		}
 		if (inFailures && failLines < maxFailLines && l.trim()) { keep.add(i); failLines++; }
+	}
+	// inside failure sections, drop traceback paragraphs that end in a library frame (site-packages, /opt/conda, /usr/lib):
+	// the agent cannot edit those, and the repo frame plus the E-lines carry the information
+	const LIB = /(site-packages|dist-packages|\/opt\/conda|\/usr\/lib|\/usr\/local\/lib|\.pyenv|\/node_modules\/)/;
+	// A frame runs from the previous boundary (section marker, chain separator or previous footer) to its
+	// footer line "path:line: Error". Library frames lose their source lines; their E-lines (the message) stay.
+	const FOOTER = /^\S+\.(py|js|ts|rb|go|rs|java):\d+: ?\w*$|^\s*File "[^"]+", line \d+/;
+	let boundary = -1;
+	for (let i = 0; i < lines.length; i++) {
+		if (TEST_SECTION.test(lines[i]) || TEST_SUMMARY.test(lines[i])) { boundary = i; continue; }
+		if (!FOOTER.test(lines[i])) continue;
+		if (LIB.test(lines[i])) {
+			for (let j = boundary + 1; j <= i; j++) if (keep.has(j) && !/^E\s{2,}/.test(lines[j])) keep.delete(j);
+		}
+		boundary = i;
 	}
 	// keep a compact index of test ids (agents pick one to re-run), capped so verbose runs stay small
 	let ids = 0;
@@ -222,6 +237,64 @@ export function treeView(text: string, perDir = 8, terms: string[] = []): View |
 	return make("tree", lines, idx);
 }
 
+const GREP_LINE = /^([^:\s][^:]*?):(\d+)[:-]/;
+
+/**
+ * grep / rg / git grep output (path:line:content): keep the first matches of every file and say how
+ * many more each file has. Files are what the agent navigates by; the tail of a long match list rarely matters.
+ */
+export function matchesView(text: string, perFile = 6): View | undefined {
+	const lines = text.split("\n");
+	let grepLines = 0;
+	const byFile = new Map<string, number[]>();
+	for (let i = 0; i < lines.length; i++) {
+		const m = lines[i].match(GREP_LINE);
+		if (!m) continue;
+		grepLines++;
+		if (!byFile.has(m[1])) byFile.set(m[1], []);
+		byFile.get(m[1])!.push(i);
+	}
+	const nonEmpty = lines.filter((l) => l.trim()).length;
+	if (grepLines < 10 || grepLines < nonEmpty * 0.6 || byFile.size < 1) return undefined;
+	const keep = new Set<number>();
+	for (let i = 0; i < lines.length; i++) if (!GREP_LINE.test(lines[i]) && lines[i].trim() && !/^--$/.test(lines[i])) keep.add(i); // non-match lines (headers, errors)
+	for (const idx of byFile.values()) for (const i of idx.slice(0, perFile)) keep.add(i);
+	const idx = [...keep].sort((a, b) => a - b);
+	if (idx.length >= lines.length * 0.8) return undefined;
+	return make("matches", lines, idx);
+}
+
+/** Normalise a log line to its template: numbers, hex, timestamps and quoted strings removed. */
+function lineTemplate(l: string): string {
+	return l.replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*/g, "<ts>").replace(/0x[0-9a-f]+/gi, "<hex>").replace(/\b\d+(\.\d+)?/g, "<n>").replace(/(["']).*?\1/g, "<str>").trim();
+}
+
+/**
+ * Log-like output (scripts, servers, repeated progress lines): keep the first two and the last
+ * occurrence of every line template, so repeated lines collapse while the story stays readable.
+ */
+export function logView(text: string): View | undefined {
+	const lines = text.split("\n");
+	if (lines.length < 40) return undefined;
+	const seen = new Map<string, number[]>();
+	for (let i = 0; i < lines.length; i++) {
+		if (!lines[i].trim()) continue;
+		const t = lineTemplate(lines[i]);
+		if (!seen.has(t)) seen.set(t, []);
+		seen.get(t)!.push(i);
+	}
+	// only worth it when templates repeat a lot
+	const repeated = [...seen.values()].filter((v) => v.length >= 3).reduce((a, v) => a + v.length, 0);
+	if (repeated < lines.length * 0.3) return undefined;
+	const keep = new Set<number>();
+	for (const idx of seen.values()) { keep.add(idx[0]); if (idx.length > 1) keep.add(idx[1]); keep.add(idx[idx.length - 1]); }
+	for (let i = 0; i < lines.length; i++) if (SIGNAL_RE.test(lines[i])) keep.add(i);
+	for (let i = Math.max(0, lines.length - 5); i < lines.length; i++) keep.add(i);
+	const idx = [...keep].sort((a, b) => a - b);
+	if (idx.length >= lines.length * 0.8) return undefined;
+	return make("log", lines, idx);
+}
+
 /** Data files: header plus a sample of rows and the count. */
 export function sampleView(text: string, rows = 12): View {
 	const lines = text.split("\n");
@@ -261,9 +334,15 @@ export interface ViewParams {
 	signalsTail: number;
 	/** How many passing test ids the testlog view keeps as an index (0 = none). */
 	testIds: number;
+	/** Max lines kept per failure section in testlog. */
+	testFailLines: number;
+	/** grep-style output: matches kept per file in the "matches" view. */
+	matchesPerFile: number;
+	/** Log-like output: offer the "log" view that collapses repeated line templates. */
+	logView: boolean;
 	minShrink: number;
 }
-export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 2, signalsTail: 8, testIds: 25, minShrink: 0.6 };
+export const DEFAULT_VIEW_PARAMS: ViewParams = { headLines: 40, tailLines: 20, focusCtx: 3, sampleRows: 12, signalsCtx: 2, signalsTail: 8, testIds: 25, testFailLines: 60, matchesPerFile: 6, logView: true, minShrink: 0.6 };
 
 export interface Candidates {
 	kind: ContentKind;
@@ -283,7 +362,9 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 		cands.push(v);
 	};
 	if (kind === "code" || kind === "prose") add(outlineView(text, kind));
-	if (kind === "command") add(testlogView(text, P.signalsCtx, 60, P.testIds));
+	if (kind === "command") add(testlogView(text, P.signalsCtx, P.testFailLines, P.testIds));
+	if (kind === "command" || kind === "listing") add(matchesView(text, P.matchesPerFile));
+	if (kind === "command" && P.logView) add(logView(text));
 	if (kind === "listing") add(treeView(text, 8, terms));
 	if (kind === "command" || kind === "listing") add(signalsView(text, P.signalsCtx, P.signalsTail));
 	if (kind === "data") add(sampleView(text, P.sampleRows));

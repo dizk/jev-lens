@@ -56,6 +56,8 @@ const VIEW_DESCRIPTIONS: Record<ViewKind, string> = {
 	sample: "Header plus a sample of rows and the total count, for tabular or log-like data. Enough to learn the shape of the data, not its contents.",
 	head_tail: "The first and last lines only. Enough to see what the output is and how it ends.",
 	relevant: "Outline plus the full bodies of the blocks the agent will need.",
+	matches: "Search output (grep, rg) reduced to the first matches of every file with the count of further matches per file, plus any non-match lines. Enough to see which files and lines are involved; not enough to read every match.",
+	log: "Script or server output with repeated lines collapsed: the first two and the last occurrence of every repeated line pattern, plus errors and the final lines. Enough to follow what happened; not enough to see every iteration.",
 	tree: "A directory listing reduced to the first few entries of every directory, with the number of omitted entries per directory. Enough to learn the project layout, not enough to find one specific file in a large directory.",
 	testlog: "A test run reduced to the failing tests with their assertion and traceback, the short summary and the final counts. Passing tests and decoration are dropped. Enough for reacting to a test run; not enough to see the output of passing tests.",
 };
@@ -144,10 +146,10 @@ export class MockPresend implements PresendClassifier {
 export function decideView(
 	answer: { choice: ViewKind; probabilities: Record<string, number>; confidence: number; needsFull: number },
 	cands: Candidates,
-	cfg: Pick<Config, "presendNeedsFullAbove" | "presendFullMassAbove" | "presendMinConfidence" | "presendCodeNeedsFullAbove">,
+	cfg: Pick<Config, "presendNeedsFullAbove" | "presendFullMassAbove" | "presendMinConfidence" | "presendCodeNeedsFullAbove" | "presendCommandNeedsFullAbove">,
 ): View {
 	const full = cands.views[0];
-	const needsFullAbove = cands.kind === "code" ? Math.min(cfg.presendNeedsFullAbove, cfg.presendCodeNeedsFullAbove) : cfg.presendNeedsFullAbove;
+	const needsFullAbove = cands.kind === "code" ? Math.min(cfg.presendNeedsFullAbove, cfg.presendCodeNeedsFullAbove) : cands.kind === "command" ? cfg.presendCommandNeedsFullAbove : cfg.presendNeedsFullAbove;
 	if (answer.needsFull > needsFullAbove) return full;
 	// For code, "focus" alone is a locating aid; if it wins, upgrade to outline so structure comes along (the second step may expand bodies).
 	if (cands.kind === "code" && answer.choice === "focus") { const outline = cands.views.find((v) => v.kind === "outline"); if (outline) return outline; }
