@@ -178,18 +178,47 @@ describe("TUI integration", () => {
 		const text = String(comp.render(200).join("\n"));
 		expect(text).toContain("jev-lens");
 		expect(text).toMatch(/of \d+ tokens \(−\d+ %\)/);
-		const plain = tools.get("read").renderResult({ content: [{ type: "text", text: "a\nb" }] }, { expanded: false }, theme, { toolCallId: "nope" });
-		expect(String(plain.render(80).join("\n"))).toContain("2 lines");
+		// Native read results are hidden when collapsed; the built-in call header carries the path.
+		const plain = tools.get("read").renderResult({ content: [{ type: "text", text: "a\nb" }] }, { expanded: false, isPartial: false }, theme, { toolCallId: "nope", args: { path: "a.txt" }, cwd: ctx.cwd, state: {} });
+		expect(String(plain.render(80).join("\n"))).toBe("");
 		const notes: string[] = [];
 		const cmdCtx = { ...ctx, hasUI: false, mode: "print", ui: { notify: (m: string) => notes.push(m), setStatus() {} } };
 		await commands.get("jev-lens").handler("diff", cmdCtx);
 		expect(notes[0]).toContain("src/categories.js");
 		await commands.get("jev-lens").handler("list", cmdCtx);
 		expect(notes[1]).toMatch(/outline|relevant/);
+		expect(commands.get("jev-lens").getArgumentCompletions("diff ")[0].value).toBe("diff 1");
+		await commands.get("jev-lens").handler("diff 2", cmdCtx);
+		expect(notes[2]).toContain("Choose 1-1");
 	});
 });
 
 describe("status line", () => {
+	it("restores saved tokens after reload and labels restored results separately from new attempts", async () => {
+		const mod = await import("../index.ts");
+		const { pi, emit, entries, commands } = fakePi();
+		mod.default(pi as any);
+		const full = "x".repeat(8000), sent = "y".repeat(400);
+		const savedResult = { ...toolResult("old", sent + '\n\n[jev-lens: recall(id: "old")]'), details: { jevLens: { full, view: "outline", args: { path: "old.txt" } } } };
+		entries.push({ type: "message", message: savedResult });
+		const statuses: string[] = [], notes: string[] = [];
+		const ctx = { ...ctxFor(mkdtempSync(join(tmpdir(), "jevext-")), entries), hasUI: true, ui: {
+			notify: (text: string) => notes.push(text), setStatus: (_key: string, text: string) => statuses.push(text),
+		} };
+		for (const reason of ["reload", "resume"]) {
+			await emit("session_start", { reason }, ctx);
+			expect(statuses.at(-1)).toContain("presend −1.9k · 0/0 new · 1 restored");
+			await emit("context", { messages: [savedResult] }, ctx);
+			await emit("message_end", { message: { ...assistant("done"), usage: { input: 1000, cacheRead: 0, output: 0 } } }, ctx);
+			expect(statuses.at(-1)).toMatch(/−\d+% of input \(presend −1.9k/);
+			await commands.get("jev-lens").handler("stats", ctx);
+			expect(notes.at(-1)).toContain("restored from session: 1 compressed results, ≈1900 tokens saved");
+		}
+		entries.length = 0;
+		await emit("session_start", { reason: "new" }, ctx);
+		expect(statuses.at(-1)).toContain("presend −0.0k · 0/0");
+		expect(statuses.at(-1)).not.toContain("restored");
+	});
 	it("leads with the share of the session's input tokens kept out of the prompt", async () => {
 		const { readFileSync } = await import("node:fs");
 		const mod: any = await import("../index.ts");
@@ -217,6 +246,30 @@ describe("status line", () => {
 	});
 });
 
+describe("command UX", () => {
+	it("completes subcommands and reports invalid commands instead of showing stats", async () => {
+		const mod = await import("../index.ts");
+		const { pi, commands } = fakePi();
+		mod.default(pi as any);
+		const cmd = commands.get("jev-lens");
+		expect(cmd.getArgumentCompletions("").map((i: any) => i.value)).toEqual(["stats", "list", "diff", "decisions", "key", "help"]);
+		expect(cmd.getArgumentCompletions("di").map((i: any) => i.value)).toEqual(["diff"]);
+		for (const prefix of ["key ts_secret", "stats ", "unknown", "diff "]) expect(cmd.getArgumentCompletions(prefix)).toBeNull();
+		const notes: { text: string; level: string }[] = [];
+		const ctx = { ...ctxFor("/tmp", []), ui: { notify: (text: string, level: string) => notes.push({ text, level }), setStatus() {} } };
+		for (const arg of ["dif", "different", "stats extra", "diff 0", "diff -1", "diff 1.5", "diff NaN", "diff 1 extra"]) {
+			await cmd.handler(arg, ctx);
+			expect(notes.at(-1)?.level).toBe("warning");
+		}
+		await cmd.handler("help", ctx);
+		expect(notes.at(-1)?.text).toContain("/jev-lens diff [n]");
+		await cmd.handler("stats", ctx);
+		expect(notes.at(-1)?.text).toContain("mock (forced by JEV_LENS_CLASSIFIER)");
+		await cmd.handler("key", ctx); // no input dialog in print mode
+		expect(notes.at(-1)?.text).toContain("TYPESAFE_API_KEY");
+	});
+});
+
 describe("/jev-lens key", () => {
 	it("stores a key given as argument and reports where", async () => {
 		const mod: any = await import("../index.ts");
@@ -225,14 +278,37 @@ describe("/jev-lens key", () => {
 		const cwd = mkdtempSync(join(tmpdir(), "jevext-"));
 		process.env.JEV_LENS_KEY_FILE = join(cwd, "jev-lens.json");
 		const notes: string[] = [];
-		const ctx = { ...ctxFor(cwd, entries), ui: { notify: (m: string) => notes.push(m), setStatus() {}, input: async () => "ts_typed" } };
+		const { KeybindingsManager, TUI_KEYBINDINGS } = await import("@earendil-works/pi-tui");
+		const ctx = { ...ctxFor(cwd, entries), hasUI: true, mode: "tui", ui: {
+			notify: (m: string) => notes.push(m), setStatus() {},
+			input: async () => { throw new Error("Plaintext input must not be used"); },
+			custom: async (factory: any) => {
+				let result: string | undefined;
+				const component = factory({ requestRender() {} }, { fg: (_c: string, t: string) => t }, new KeybindingsManager(TUI_KEYBINDINGS), (value: string | undefined) => { result = value; });
+				component.handleInput("ts_typed");
+				expect(component.render(80).join("\n")).not.toContain("ts_typed");
+				component.handleInput("\r");
+				return result;
+			},
+		} };
 		await emit("session_start", {}, ctx);
 		await commands.get("jev-lens").handler("key ts_given", ctx);
 		const { readFileSync } = await import("node:fs");
 		expect(JSON.parse(readFileSync(join(cwd, "jev-lens.json"), "utf8"))).toEqual({ apiKey: "ts_given" });
 		expect(notes.at(-1)).toContain("key stored in");
+		expect(notes.at(-1)).toContain("Mock mode remains active");
 		await commands.get("jev-lens").handler("key", ctx); // prompts when no argument
 		expect(JSON.parse(readFileSync(join(cwd, "jev-lens.json"), "utf8"))).toEqual({ apiKey: "ts_typed" });
+		await commands.get("jev-lens").handler("key", { ...ctx, ui: { ...ctx.ui, custom: async () => undefined } });
+		expect(notes.at(-1)).toContain("cancelled");
+		expect(JSON.parse(readFileSync(join(cwd, "jev-lens.json"), "utf8"))).toEqual({ apiKey: "ts_typed" });
+		await commands.get("jev-lens").handler("key", { ...ctx, mode: "rpc" });
+		expect(notes.at(-1)).toContain("Masked key input requires terminal mode");
+		expect(JSON.parse(readFileSync(join(cwd, "jev-lens.json"), "utf8"))).toEqual({ apiKey: "ts_typed" });
+		process.env.JEV_LENS_KEY_FILE = cwd; // writing over a directory fails
+		await commands.get("jev-lens").handler("key ts_secret", ctx);
+		expect(notes.at(-1)).toContain("Could not store the key");
+		expect(notes.at(-1)).not.toContain("ts_secret");
 		delete process.env.JEV_LENS_KEY_FILE;
 	});
 });

@@ -21,15 +21,15 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 function harness() {
-	const handlers = new Map<string, any[]>(), entries: any[] = [], tools = new Map<string, any>();
-	extension({ on: (n: string, h: any) => handlers.set(n, [...(handlers.get(n) ?? []), h]), registerTool: (t: any) => tools.set(t.name, t), registerCommand() {}, appendEntry: (customType: string, data: any) => entries.push({ customType, data }) } as any);
+	const handlers = new Map<string, any[]>(), entries: any[] = [], tools = new Map<string, any>(), commands = new Map<string, any>();
+	extension({ on: (n: string, h: any) => handlers.set(n, [...(handlers.get(n) ?? []), h]), registerTool: (t: any) => tools.set(t.name, t), registerCommand: (name: string, def: any) => commands.set(name, def), appendEntry: (customType: string, data: any) => entries.push({ customType, data }) } as any);
 	const ctx = { cwd: temp(), hasUI: false, sessionManager: { getEntries: () => [], getBranch: () => [] } };
 	const emit = async (n: string, event: any = {}, context = ctx) => {
 		let returned: any;
 		for (const h of handlers.get(n) ?? []) returned = (await h(event, context)) ?? returned;
 		return returned;
 	};
-	return { emit, ctx, entries, tools };
+	return { emit, ctx, entries, tools, commands };
 }
 
 beforeEach(() => {
@@ -61,6 +61,75 @@ describe("content safety", () => {
 		await h.emit("turn_end", { toolResults: [{ ...result(), content: [...result().content, { type: "image", data: "abc", mimeType: "image/png" }] }] });
 		await h.emit("agent_end");
 		expect(spy).not.toHaveBeenCalled();
+	});
+});
+
+describe("visible failures", () => {
+	const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+	const event = { toolName: "read", toolCallId: "r", input: { path: "a.js" }, content: [{ type: "text", text: code }], isError: false };
+	function ui(h: ReturnType<typeof harness>) {
+		return { ...h.ctx, hasUI: true, ui: { notify: vi.fn(), setStatus: vi.fn() } };
+	}
+	it("keeps full output on failure, warns once, and clears degraded status on success", async () => {
+		const choose = vi.spyOn(MockPresend.prototype, "choose").mockRejectedValue({ status: 401, message: "ts_secret" });
+		const h = harness(), ctx = ui(h);
+		await h.emit("session_start", {}, ctx);
+		for (let i = 0; i < 3; i++) expect(await h.emit("tool_result", event, ctx)).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		expect(ctx.ui.notify.mock.calls[0][0]).toContain("Full output was kept");
+		expect(ctx.ui.setStatus.mock.lastCall?.[1]).toContain("degraded");
+		choose.mockResolvedValue({ choice: "full", probabilities: { full: 1 }, needsFull: 1, confidence: 1 });
+		expect(await h.emit("tool_result", event, ctx)).toBeUndefined();
+		expect(ctx.ui.setStatus.mock.lastCall?.[1]).not.toContain("degraded");
+		await h.commands.get("jev-lens").handler("stats", ctx);
+		expect(ctx.ui.notify.mock.lastCall?.[0]).toContain("presend failures: 3 (a later attempt succeeded)");
+		expect(JSON.stringify(ctx.ui.notify.mock.calls)).not.toContain("ts_secret");
+	});
+	it("also reports block expansion failures without sending a partial view", async () => {
+		vi.spyOn(MockPresend.prototype, "choose").mockResolvedValue({ choice: "outline", probabilities: { outline: 1 }, needsFull: 0, confidence: 1 });
+		vi.spyOn(MockPresend.prototype, "expand").mockRejectedValue(new Error("offline"));
+		const h = harness(), ctx = ui(h);
+		await h.emit("session_start", {}, ctx);
+		expect(await h.emit("tool_result", event, ctx)).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+	});
+	it("ignores cancelled and stale failures and resets counters for a new session", async () => {
+		let reject!: (e: unknown) => void;
+		const choose = vi.spyOn(MockPresend.prototype, "choose").mockImplementation(() => new Promise((_resolve, r) => { reject = r; }));
+		const h = harness(), ctx = ui(h), abort = new AbortController();
+		await h.emit("session_start", {}, ctx);
+		const work = h.emit("tool_result", event, { ...ctx, signal: abort.signal } as any);
+		await vi.waitFor(() => expect(choose).toHaveBeenCalledTimes(1));
+		abort.abort(); reject(new Error("cancelled")); await work;
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
+		const stale = h.emit("tool_result", event, ctx);
+		await vi.waitFor(() => expect(choose).toHaveBeenCalledTimes(2));
+		await h.emit("session_start", {}, ctx);
+		reject(new Error("old session")); await stale;
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
+		choose.mockRejectedValue(new Error("new failure"));
+		await h.emit("tool_result", event, ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		await h.emit("session_start", {}, ctx);
+		await h.commands.get("jev-lens").handler("stats", ctx);
+		expect(ctx.ui.notify.mock.lastCall?.[0]).toContain("presend failures: 0");
+	});
+	it("reports post-send failures from a headless context on the next UI update", async () => {
+		vi.spyOn(MockClassifier.prototype, "classifyToolResult").mockRejectedValue(new Error("offline"));
+		const h = harness(), ctx = ui(h);
+		await h.emit("session_start", {}, ctx);
+		await h.emit("turn_end", { toolResults: [result()] });
+		await h.emit("agent_end"); // this context has no UI
+		await h.emit("context", { messages: [] }, ctx);
+		expect(ctx.ui.notify.mock.lastCall?.[0]).toContain("Post-send classification failed");
+	});
+	it("reports post-send failures at agent end without waiting for another turn", async () => {
+		vi.spyOn(MockClassifier.prototype, "classifyToolResult").mockRejectedValue(new Error("offline"));
+		const h = harness(), ctx = ui(h);
+		await h.emit("session_start", {}, ctx);
+		await h.emit("turn_end", { toolResults: [result()] }, ctx);
+		await h.emit("agent_end", {}, ctx);
+		expect(ctx.ui.notify.mock.lastCall?.[0]).toContain("Post-send classification failed");
 	});
 });
 

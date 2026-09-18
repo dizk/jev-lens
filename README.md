@@ -64,6 +64,8 @@ Three results shaped the design:
 
 ## Install
 
+Use pi 0.84.3 or newer. The extension uses pi's built-in tool renderers for results that it does not compress.
+
 ```sh
 pi install npm:pi-jev-lens                    # from npm
 pi install git:github.com/dizk/pi-jev-lens    # or from GitHub
@@ -73,12 +75,22 @@ jev needs a TypeSafe API key. You can get one at [console.typesafe.ai](https://c
 for the key in this order:
 
 1. `TYPESAFE_API_KEY` in the environment.
-2. The key that you stored with `/jev-lens key` inside pi. The command prompts for the key, or you can give it as
-   `/jev-lens key ts_...`. The key is stored in `~/.pi/agent/jev-lens.json`, readable only by you. jev is active from
-   the next tool result. You do not have to restart pi.
-3. A `.env` file next to the installed package. This is for development.
+2. A `.env` file next to the installed package. This is for development and supplies environment values that are not already set.
+3. The key that you stored with `/jev-lens key` inside pi. In terminal mode, the command opens a masked input field.
+   The key is stored in `~/.pi/agent/jev-lens.json`. New files are readable only by you.
 
-If no key is found, the extension shows a warning at startup and runs a mock classifier that compresses nothing.
+Use `/jev-lens key` without an argument to keep the key out of command history. The field displays only `*` characters.
+Type or paste the key, then press Enter to save. Press Esc to cancel without changing the stored key.
+In RPC or noninteractive mode, set `TYPESAFE_API_KEY`. These modes do not fall back to a visible input field.
+The key file still stores the key as plain text. Masking protects the terminal display, not the file.
+
+You can still use `/jev-lens key ts_...`, but that exposes the key in the editor and can retain it in command history.
+A new key takes effect without a restart, but the command does not validate it.
+If `TYPESAFE_API_KEY` is set, that value takes priority again after reload.
+If mock mode is forced or compression is disabled, storing a key does not change those settings.
+
+If no key is found, the extension shows a warning at startup and uses a deterministic mock classifier.
+The mock can compress results without API calls. It is not the jev model.
 
 For development, clone the repository and load it directly:
 
@@ -143,20 +155,35 @@ The footer shows the share of the session's input tokens that jev kept out of th
 jev-lens −38% of input (presend −12.3k · 5/8 · 1 recalls)
 ```
 
-The share is cut divided by sent plus cut. Sent is the provider's own count of input and cache-read tokens over all
-calls. Cut is what every compressed result saved on every call that it was part of.
+The share is cut divided by sent plus cut. Sent counts input and cache-read tokens reported by the provider since the last load.
+Cut estimates what compressed results saved on those calls, including results restored from the session.
+The percentage counts repeated savings when the same result appears in later prompts. The `presend` total counts each result once.
+
+After `/reload` or resume, the footer includes saved tokens from restored compressed results.
+For example, `0/3 new · 5 restored` means no new compressions among three candidates, plus five restored compressed results.
+New-result counts and recall counts start at zero after loading. `/jev-lens stats` shows new and restored savings separately.
 
 In the transcript, a compressed result shows a header like `⌁ jev-lens outline · 179 of 1524 tokens (−88 %)`. When
 you expand it with ctrl+e, you see exactly what the model saw. These commands are available:
 
-- `/jev-lens` shows the statistics and where the key comes from.
+Type `/jev-lens ` and press Tab to complete subcommands. After `diff `, completion offers available result numbers.
+Use `/reload` after installing the package in a running pi session.
+
+- `/jev-lens` or `/jev-lens stats` shows the statistics, active configuration, and key source.
+- `/jev-lens help` shows command usage.
+- `/jev-lens decisions` shows post-send pruning decisions. Post-send pruning is off by default.
 - `/jev-lens list` lists the latest 200 compressed results with the tokens before and after.
 - `/jev-lens diff [n]` opens an overlay for the n-th latest result. It shows the original with the lines that the
   model did not get marked with `−`. Press `t` to see what was sent, and `Esc` to close.
 - `/jev-lens key` stores the API key.
 
-jev-lens logs every decision to `<project>/.pi/jev-lens.log` as JSON lines. Set `JEV_LENS_UI=0` to keep pi's own
-tool rendering.
+If compression fails, jev-lens keeps the full output and shows a warning. A failed post-send classification leaves that result unchanged.
+Warnings appear at most once per stage per session. The footer shows `degraded` until a later attempt in that stage succeeds.
+Use `/jev-lens stats` to see failure counts and recovery status. Cancellation does not count as a failure.
+
+Uncompressed results, errors, and streaming updates use pi's built-in tool renderers.
+jev-lens logs every decision to `<project>/.pi/jev-lens.log` as JSON lines. Set `JEV_LENS_UI=0` to disable the
+custom savings headers and tool overrides.
 
 ### Configuration (environment)
 

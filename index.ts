@@ -11,11 +11,11 @@
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "./src/pi-types.ts";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createBashTool, createFindTool, createGrepTool, createLsTool, createReadTool } from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { DiffOverlay, listLines, savingsLine, type CompressedRecord } from "./src/ui.ts";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
@@ -23,6 +23,9 @@ import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "
 import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "./src/presend.ts";
 import { buildCandidatesAsync, extractTerms, footer } from "./src/views.ts";
 import { keyFilePath, loadConfigWithVariant, storeKey, type Config } from "./src/config.ts";
+import { Health } from "./src/health.ts";
+import { SecretInput } from "./src/secret-input.ts";
+import { commandCompletions, commandHelp } from "./src/commands.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "./src/policy.ts";
 import { contentText, describeToolCall, estimateTokensOfText, toolCallsOf, truncate } from "./src/text.ts";
@@ -37,6 +40,7 @@ export default function (pi: ExtensionAPI) {
 	const { cfg, variant } = loadConfigWithVariant();
 	const prompts: PromptVariant = { ...DEFAULT_PROMPTS, ...((variant.prompts ?? {}) as Partial<PromptVariant>), viewDescriptions: { ...DEFAULT_PROMPTS.viewDescriptions, ...(((variant.prompts ?? {}) as Partial<PromptVariant>).viewDescriptions ?? {}) } };
 	const viewParams = variant.views ?? {};
+	let keySource = process.env.TYPESAFE_API_KEY === cfg.apiKey && cfg.apiKey ? "env" : cfg.apiKey ? keyFilePath() : "none";
 	let usingMock = cfg.forceMock || !cfg.apiKey;
 	let classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
 	let presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
@@ -54,7 +58,9 @@ export default function (pi: ExtensionAPI) {
 	const recordById = new Map<string, CompressedRecord>();
 	const remember = (r: CompressedRecord) => { records.push(r); recordById.set(r.id, r); if (records.length > 200) { const old = records.shift(); if (old) recordById.delete(old.id); } };
 	let lastAssistantText = "";
+	let health = new Health();
 	let presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
+	let restored = { compressed: 0, tokensSaved: 0 };
 
 	let ledger = new Map<string, Decision>();
 	/** Classifications launched but not yet resolved, keyed by toolCallId. */
@@ -96,14 +102,18 @@ export default function (pi: ExtensionAPI) {
 		return sent > 0 ? Math.round((100 * kept) / (sent + kept)) : undefined;
 	};
 	const statusText = () => {
-		const tag = usingMock ? "jev-lens(mock)" : "jev-lens";
+		const tag = !cfg.enabled ? "jev-lens(disabled)" : usingMock ? "jev-lens(mock)" : "jev-lens";
 		const pct = cutShare();
-		const lead = pct === undefined ? tag : `${tag} −${pct}% of input`;
+		const label = health.failing ? `${tag}(degraded)` : tag;
+		const lead = pct === undefined ? label : `${label} −${pct}% of input`;
 		const pruned = cfg.mode === "off" ? "" : `, pruned −${(totals.pruned / 1000).toFixed(1)}k · ${totals.applied}`;
-		return `${lead} (presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k · ${presendTotals.compressed}/${presendTotals.considered} · ${presendTotals.recalls} recalls${pruned})`;
+		const saved = presendTotals.tokensSaved + restored.tokensSaved;
+		const counts = `${presendTotals.compressed}/${presendTotals.considered}${restored.compressed ? ` new · ${restored.compressed} restored` : ""}`;
+		return `${lead} (presend −${(saved / 1000).toFixed(1)}k · ${counts} · ${presendTotals.recalls} recalls${pruned})`;
 	};
 	const status = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
+		for (const warning of health.warnings()) ctx.ui.notify(warning, "warning");
 		ctx.ui.setStatus("jev-lens", statusText());
 	};
 
@@ -116,6 +126,7 @@ export default function (pi: ExtensionAPI) {
 		sessionAbort.abort();
 		sessionAbort = new AbortController();
 		lastAssistantText = "";
+		health = new Health();
 		ledger = rebuildLedger(ctx.sessionManager.getEntries());
 		buffer = [];
 		inflight.clear();
@@ -130,6 +141,7 @@ export default function (pi: ExtensionAPI) {
 		records.length = 0;
 		recordById.clear();
 		presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
+		restored = { compressed: 0, tokensSaved: 0 };
 		try {
 			mkdirSync(join(ctx.cwd, CONFIG_DIR_NAME), { recursive: true });
 			logPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-lens.log");
@@ -147,6 +159,8 @@ export default function (pi: ExtensionAPI) {
 				if (d?.full) {
 					fullOutputs.set(entry.message.toolCallId, { text: d.full, toolName: entry.message.toolName, args: d.args, view: d.view ?? "?" });
 					const sent = contentText(entry.message.content).replace(/\n\n\[jev-lens:[\s\S]*$/, "");
+					restored.compressed++;
+					restored.tokensSaved += Math.max(0, estimateTokensOfText(d.full) - estimateTokensOfText(sent));
 					remember({ id: entry.message.toolCallId, toolName: entry.message.toolName, args: d.args, kind: d.kind ?? "?", view: d.view ?? "?", tokensBefore: estimateTokensOfText(d.full), tokensAfter: estimateTokensOfText(sent), full: d.full, sent, included: d.included ?? [], needsFull: d.needsFull, pFull: d.p?.full, recalls: 0, at: entry.message.timestamp });
 				}
 			}
@@ -206,20 +220,19 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("agent_end", async () => {
-		const epoch = generation;
+	pi.on("agent_end", async (_event, ctx) => {
 		// No further assistant reaction is coming for the last results; classify with what we have.
 		const toClassify = buffer;
 		buffer = [];
-		for (const item of toClassify) launchClassification(item, "", [], undefined);
+		for (const item of toClassify) launchClassification(item, "", [], ctx);
 		await waitForWork([...inflight.values()]);
-		void epoch;
 	});
 
 	function launchClassification(item: PendingResult, afterText: string, afterCalls: { name: string; arguments: unknown }[], ctx?: ExtensionContext) {
 		const m = item.message;
 		if (cfg.mode === "off" || sessionAbort.signal.aborted || m.content.some((c) => c.type !== "text")) return;
 		const epoch = generation;
+		const signal = workSignal(ctx?.signal);
 		if (ledger.has(m.toolCallId) || inflight.has(m.toolCallId)) return;
 		const output = contentText(m.content);
 		const tokens = estimateTokensOfText(output);
@@ -238,9 +251,11 @@ export default function (pi: ExtensionAPI) {
 		const summary = describeToolCall(m.toolName, item.args, output.length, lines);
 		const started = Date.now();
 		const p = classifier
-			.classifyToolResult(state, workSignal(ctx?.signal))
+			.classifyToolResult(state, signal)
 			.then((probs) => {
-				if (epoch !== generation) return;
+				if (epoch !== generation || signal.aborted) return;
+				health.success("postsend");
+				if (ctx) status(ctx);
 				const decision: Decision = {
 					id: m.toolCallId,
 					toolName: m.toolName,
@@ -256,7 +271,10 @@ export default function (pi: ExtensionAPI) {
 				log({ event: "decision", id: decision.id, tool: m.toolName, bucket: decision.bucket, p: probs, tokens, ms: Date.now() - started, summary });
 			})
 			.catch((err) => {
-				if (epoch === generation) log({ event: "classify_error", id: m.toolCallId, error: String(err?.message ?? err) });
+				if (epoch !== generation || signal.aborted) return;
+				health.failure("postsend", err);
+				log({ event: "classify_error", id: m.toolCallId, error: health.lines()[1] });
+				if (ctx) status(ctx);
 			})
 			.finally(() => { if (epoch === generation) inflight.delete(m.toolCallId); });
 		inflight.set(m.toolCallId, p);
@@ -348,16 +366,16 @@ export default function (pi: ExtensionAPI) {
 		if (event.content.some((c) => c.type === "image")) return;
 		presendTotals.considered++;
 		const started = Date.now();
-		const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
-		const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms, viewParams);
-		if (epoch !== generation || signal.aborted) return;
-		if (cands.views.length < 2) {
-			log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
-			return;
-		}
-		const totalLines = text.split("\n").length;
-		const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistantText, toolName: event.toolName, args: event.input, isError: event.isError, cands, totalLines, totalChars: text.length });
 		try {
+			const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
+			const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms, viewParams);
+			if (epoch !== generation || signal.aborted) return;
+			if (cands.views.length < 2) {
+				log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
+				return;
+			}
+			const totalLines = text.split("\n").length;
+			const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistantText, toolName: event.toolName, args: event.input, isError: event.isError, cands, totalLines, totalChars: text.length });
 			const answer = await presend.choose(state, cands.views.map((v) => v.kind), signal);
 			if (epoch !== generation || signal.aborted) return;
 			let view = decideView(answer, cands, cfg);
@@ -368,6 +386,8 @@ export default function (pi: ExtensionAPI) {
 				if (epoch !== generation || signal.aborted) return;
 				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > above ? i : -1)).filter((i) => i >= 0); }
 			}
+			health.success("presend");
+			status(ctx);
 			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
 			if (view.kind === "full") return;
 			presendTotals.compressed++;
@@ -378,7 +398,10 @@ export default function (pi: ExtensionAPI) {
 			status(ctx);
 			return { content: [{ type: "text", text: view.text + footer(view, event.toolCallId, totalLines) }], details };
 		} catch (err) {
-			if (epoch === generation) log({ event: "presend_error", id: event.toolCallId, error: String((err as Error)?.message ?? err) });
+			if (epoch !== generation || signal.aborted) return;
+			health.failure("presend", err);
+			log({ event: "presend_error", id: event.toolCallId, error: health.lines()[0] });
+			status(ctx);
 			return;
 		}
 	});
@@ -427,71 +450,69 @@ export default function (pi: ExtensionAPI) {
 
 	if (process.env.JEV_LENS_UI !== "0") {
 		const cwd = process.cwd();
-		const originals: Record<string, ReturnType<typeof createReadTool>> = {
-			read: createReadTool(cwd) as ReturnType<typeof createReadTool>,
-			bash: createBashTool(cwd) as unknown as ReturnType<typeof createReadTool>,
-			grep: createGrepTool(cwd) as unknown as ReturnType<typeof createReadTool>,
-			find: createFindTool(cwd) as unknown as ReturnType<typeof createReadTool>,
-			ls: createLsTool(cwd) as unknown as ReturnType<typeof createReadTool>,
-		};
-		for (const [name, original] of Object.entries(originals)) {
-			const o = original as unknown as { description: string; parameters: never; execute: (...a: unknown[]) => Promise<unknown>; renderCall?: (...a: unknown[]) => unknown; renderResult?: (...a: unknown[]) => unknown; promptSnippet?: string; promptGuidelines?: string[] };
+		// Tool definitions include pi's renderers; create*Tool() strips them.
+		const originals: ToolDefinition<any, any>[] = [
+			createReadToolDefinition(cwd), createBashToolDefinition(cwd),
+			createGrepToolDefinition(cwd), createFindToolDefinition(cwd), createLsToolDefinition(cwd),
+		];
+		for (const original of originals) {
 			pi.registerTool({
-				name,
-				label: name,
-				description: o.description,
-				parameters: o.parameters,
-				promptSnippet: o.promptSnippet,
-				promptGuidelines: o.promptGuidelines,
-				async execute(toolCallId: string, params: unknown, signal: AbortSignal | undefined, onUpdate: unknown, ctx: unknown) {
-					return (o.execute as (id: string, p: unknown, s: unknown, u: unknown, c: unknown) => Promise<never>)(toolCallId, params, signal, onUpdate, ctx);
-				},
-				renderCall(args: unknown, theme: Theme, context: unknown) {
-					if (o.renderCall) return (o.renderCall as (a: unknown, t: unknown, c: unknown) => never)(args, theme, context);
-					const a = args as Record<string, unknown>;
-					const what = typeof a.path === "string" ? a.path : typeof a.command === "string" ? a.command : typeof a.pattern === "string" ? a.pattern : "";
-					return new Text(theme.fg("toolTitle", theme.bold(`${name} `)) + theme.fg("accent", String(what)), 0, 0);
-				},
-				renderResult(result: { content: unknown }, options: { expanded: boolean }, theme: Theme, context: { toolCallId: string }) {
+				...original,
+				renderResult(result, options, theme, context) {
 					const rec = recordById.get(context.toolCallId);
-					if (!rec) {
-						if (o.renderResult) return (o.renderResult as (r: unknown, op: unknown, t: unknown, c: unknown) => never)(result, options, theme, context);
-						const text = contentText(result.content);
-						const lines = text.split("\n");
-						let out = theme.fg("success", `${lines.length} lines`);
-						if (options.expanded) out += "\n" + lines.slice(0, 200).join("\n");
-						else out += theme.fg("dim", "  " + lines[0]?.slice(0, 80));
-						return new Text(out, 0, 0);
+					if (!rec || options.isPartial || context.isError) {
+						return original.renderResult!(result, options, theme, context);
 					}
 					let out = savingsLine(rec, theme);
 					if (options.expanded) out += "\n" + rec.sent;
 					else out += "\n" + theme.fg("dim", rec.sent.split("\n").slice(0, 3).join("\n"));
 					return new Text(out, 0, 0);
 				},
-			} as never);
+			});
 		}
 	}
 
 	// ---- commands ----------------------------------------------------------------------
 
 	pi.registerCommand("jev-lens", {
-		description: "jev-lens: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | key [api-key] (store your TypeSafe key)",
+		description: "Inspect compression and setup: stats | list | diff [n] | decisions | key | help",
+		getArgumentCompletions: (prefix) => commandCompletions(prefix, records),
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
-			if (sub === "key" || sub.startsWith("key ")) {
+			if (sub === "help" || sub === "--help" || sub === "-h") {
+				ctx.ui.notify(commandHelp, "info");
+				return;
+			}
+			if (/^key(?:\s|$)/.test(sub)) {
 				let key = sub.slice(3).trim();
-				if (!key) key = ((await ctx.ui.input("TypeSafe API key (from console.typesafe.ai):", "ts_...")) ?? "").trim();
-				if (!key) { ctx.ui.notify("no key entered", "info"); return; }
-				const where = storeKey(key);
+				if (!key && (!ctx.hasUI || ctx.mode !== "tui")) { ctx.ui.notify("Masked key input requires terminal mode. Set TYPESAFE_API_KEY or run /jev-lens key in interactive pi.", "warning"); return; }
+				if (!key) key = ((await ctx.ui.custom<string | undefined>((tui, theme, keys, done) =>
+					new SecretInput(theme, keys, done, () => tui.requestRender()),
+				)) ?? "").trim();
+				if (!key) { ctx.ui.notify("Key setup cancelled. The current key is unchanged.", "info"); return; }
+				let where: string;
+				try { where = storeKey(key); }
+				catch {
+					ctx.ui.notify(`Could not store the key in ${keyFilePath()}. Check directory permissions or set TYPESAFE_API_KEY.`, "error");
+					return;
+				}
 				useKey(key);
-				ctx.ui.notify(`jev-lens: key stored in ${where}; jev is active from the next tool result`, "info");
+				keySource = where;
+				const next = cfg.forceMock ? "Mock mode remains active. Unset JEV_LENS_CLASSIFIER and reload pi to use jev." : !cfg.enabled || !cfg.presend ? "Pre-send compression is disabled. See /jev-lens stats." : "jev will use this key from the next tool result. The key has not been validated.";
+				ctx.ui.notify(`jev-lens: key stored in ${where}. ${next}${process.env.TYPESAFE_API_KEY ? " TYPESAFE_API_KEY takes priority again after reload." : ""}`, "info");
 				status(ctx);
 				return;
 			}
-			if (sub.startsWith("diff")) {
-				const n = Number(sub.slice(4).trim() || "1");
-				const rec = records[records.length - (Number.isFinite(n) && n >= 1 ? n : 1)];
-				if (!rec) { ctx.ui.notify("no compressed tool result to show yet", "info"); return; }
+			if (/^diff(?:\s|$)/.test(sub)) {
+				const arg = sub.slice(4).trim();
+				const n = Number(arg || "1");
+				if ((arg && !/^\d+$/.test(arg)) || !Number.isSafeInteger(n) || n < 1) {
+					ctx.ui.notify("Usage: /jev-lens diff [n]. Use a positive whole number. 1 is the newest result.", "warning");
+					return;
+				}
+				if (!records.length) { ctx.ui.notify("No compressed results yet. Use /jev-lens stats to inspect compression settings.", "info"); return; }
+				const rec = records[records.length - n];
+				if (!rec) { ctx.ui.notify(`Result ${n} is not available. Choose 1-${records.length} from /jev-lens list.`, "warning"); return; }
 				if (!ctx.hasUI || ctx.mode !== "tui") { ctx.ui.notify(listLines([rec], { fg: (_c, t) => t, bold: (t) => t }).join("\n"), "info"); return; }
 				await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 					const height = Math.max(12, Math.floor(((tui as { terminalHeight?: number }).terminalHeight ?? process.stdout.rows ?? 40) * 0.85));
@@ -506,17 +527,23 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (sub === "decisions") {
 				const rows = [...ledger.values()].map((d) => `${d.status === "applied" ? "●" : "○"} ${d.bucket.padEnd(6)} n=${d.p.needed.toFixed(2)} o=${d.p.outcomeOnly.toFixed(2)} ${d.tokensBefore}t ${d.summary}`);
-				ctx.ui.notify(rows.join("\n") || "(no decisions yet)", "info");
+				ctx.ui.notify(rows.join("\n") || (cfg.mode === "off" ? "Post-send pruning is off (the default). Pre-send compression is separate: see /jev-lens stats." : "No post-send decisions yet."), "info");
+				return;
+			}
+			if (sub && sub !== "stats") {
+				ctx.ui.notify("Unknown subcommand or extra arguments. Run /jev-lens help for usage.", "warning");
 				return;
 			}
 			const hit = totals.input + totals.cacheRead > 0 ? Math.round((100 * totals.cacheRead) / (totals.input + totals.cacheRead)) : 0;
 			ctx.ui.notify(
 				[
-					`mode=${cfg.mode} enabled=${cfg.enabled} classifier=${usingMock ? "mock (no key: /jev-lens key)" : cfg.model} key=${process.env.TYPESAFE_API_KEY ? "env" : cfg.apiKey ? keyFilePath() : "none"}`,
-					`presend: ${presendTotals.compressed}/${presendTotals.considered} large results compressed, ≈${presendTotals.tokensSaved} tokens saved, ${presendTotals.recalls} recalls`,
+					`mode=${cfg.mode} enabled=${cfg.enabled} presend=${cfg.presend} classifier=${usingMock ? cfg.forceMock ? "mock (forced by JEV_LENS_CLASSIFIER)" : "mock (no key: /jev-lens key)" : cfg.model} key=${keySource}`,
+					`presend since load: ${presendTotals.compressed}/${presendTotals.considered} large results compressed, ≈${presendTotals.tokensSaved} tokens saved, ${presendTotals.recalls} recalls`,
+					`restored from session: ${restored.compressed} compressed results, ≈${restored.tokensSaved} tokens saved (included in footer savings)`,
 					`post-send: calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
+					...health.lines(),
 					`cache: read=${totals.cacheRead} uncached=${totals.input} hit=${hit}%`,
-					`input cut: ${cutShare() ?? 0}% of the session's input tokens (≈${cut.presend + cut.pruned} of ${totals.input + totals.cacheRead + cut.presend + cut.pruned}: presend ${cut.presend}, pruned ${cut.pruned}, summed over ${totals.calls} calls)`,
+					`input cut: ${cutShare() ?? 0}% of input tokens counted since load (≈${cut.presend + cut.pruned} of ${totals.input + totals.cacheRead + cut.presend + cut.pruned}: presend ${cut.presend}, pruned ${cut.pruned}, summed over ${totals.calls} calls)`,
 				].join("\n"),
 				"info",
 			);
