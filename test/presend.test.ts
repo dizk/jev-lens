@@ -24,7 +24,8 @@ describe("presend", () => {
 		expect(q.needs_full.type).toBe("noul");
 	});
 
-	it("decideView errs towards full", () => {
+	it("decideView errs towards full (gate policy)", () => {
+		const cfg = { ...loadConfig(), presendCodePolicy: "gate" as const };
 		const base = { choice: "outline" as const, probabilities: { full: 0.1, outline: 0.8, focus: 0.1 }, confidence: 0.8, needsFull: 0.1 };
 		expect(decideView(base, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, needsFull: 0.7 }, cands, cfg).kind).toBe("full");
@@ -32,6 +33,7 @@ describe("presend", () => {
 		expect(decideView({ ...base, needsFull: 0.4 }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, choice: "focus", probabilities: { full: 0.1, outline: 0.1, focus: 0.8 } }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, needsFull: 0.9, probabilities: { full: 0.9, outline: 0.1 } }, cands, { ...cfg, presendCodePolicy: "outline" }).kind).toBe("outline");
+		expect(decideView({ ...base, needsFull: 0.9, probabilities: { full: 0.9, outline: 0.1 } }, { ...cands, kind: "prose" }, { ...cfg, presendCodePolicy: "outline" }).kind).toBe("full"); // policy is code-only
 		expect(decideView({ ...base, probabilities: { full: 0.6, outline: 0.3, focus: 0.1 } }, cands, cfg).kind).toBe("full");
 		expect(decideView({ ...base, probabilities: { full: 0.4, outline: 0.5, focus: 0.1 } }, cands, cfg).kind).toBe("outline");
 		expect(decideView({ ...base, confidence: 0.2 }, { ...cands }, { ...cfg, presendMinConfidence: 0.4 }).kind).toBe("full");
@@ -42,7 +44,7 @@ describe("presend", () => {
 		const s = buildPresendState(cfg, { firstUser: "", latestUser: "", agentText: "", toolName: "read", args: {}, isError: false, cands, totalLines: 1, totalChars: 1 });
 		const a = await new MockPresend().choose(s, kinds);
 		expect(a.choice).toBe("outline");
-		expect(decideView(a, cands, cfg).kind).toBe("outline");
+		expect(decideView(a, cands, { ...cfg, presendCodePolicy: "gate" }).kind).toBe("outline");
 	});
 });
 

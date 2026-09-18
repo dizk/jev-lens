@@ -21,7 +21,7 @@ hook, code builds candidate **views** that are strict subsets of the output, wit
 | view | for | keeps |
 |---|---|---|
 | `outline` | code, prose | imports, exports, signatures, headings, doc comments |
-| `relevant` | code | outline plus the full bodies of the blocks jev says the agent will need (second jev step) |
+| `relevant` | code | outline plus the full bodies of the blocks jev says the agent will need (second jev step); the default for source files |
 | `focus` | anything | lines mentioning identifiers from the task and the tool call, with context |
 | `signals` | command output | errors, warnings, failing tests, summary lines, the tail |
 | `sample` | tabular or log-like data | header, a dozen rows, the count |
@@ -86,6 +86,7 @@ Inside pi: `/jev-memory` shows stats, `/jev-memory decisions` lists every decisi
 | `JEV_MEMORY_PRESEND_NEEDS_FULL_ABOVE` / `_FULL_MASS_ABOVE` | `0.5` / `0.5` | send full when P(needs full) or P(full view) exceeds these |
 | `JEV_MEMORY_PRESEND_EXPAND_ABOVE` | `0.5` | expand a code block's body when P(needed) exceeds this |
 | `JEV_MEMORY_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | needs-full threshold for command output; the question is phrased for edits, and test runs rarely need exact full text (+3.3 points on the benchmark, no extra misses) |
+| `JEV_MEMORY_PRESEND_CODE_POLICY` | `outline` | `outline`: source files are never sent whole; the agent gets every signature plus the block bodies jev expands, and `recall` for the rest. `gate`: let jev's needs-full gate choose full. |
 | `JEV_MEMORY_PRESEND_CODE_NEEDS_FULL_ABOVE` | `0.5` | separate needs-full threshold for source code (lower it for a safer setting; 0.35 cost 10 points of code savings on the benchmark for no measured gain) |
 
 ## How jev is used
@@ -114,8 +115,8 @@ node --import tsx eval/report.ts                       # compare conditions
 tasks (eight short, a five-part compound and an eight-part marathon), each scored by a hidden test.
 
 Benchmark on 100 real OpenHands trajectories (685 large tool results, 2.26M tokens, `eval/bench/`): the default
-pre-send configuration sends 74.1 % fewer tokens for large results with 0 of 15 later edits missing their old text,
-0.4 % quote-misses and 1.9 % ref-misses (an identifier the agent then used that only existed in the dropped part).
+pre-send configuration sends 78.6 % fewer tokens for large results with 0 of 15 later edits missing their old text,
+0.6 % quote-misses and 2.3 % ref-misses (an identifier the agent then used that only existed in the dropped part).
 Details, the metric definitions and the autoresearch loop are in `STATUS.md`.
 
 Headline from the first night of runs (details and caveats in `STATUS.md`): decisions are sensible and the mechanism

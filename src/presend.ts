@@ -183,6 +183,8 @@ export async function expandRelevantBlocks(
 	const probs = await presend.expand(buildExpandState(base, blocks, text), signal);
 	const expand = new Set<number>();
 	probs.forEach((p, i) => { if (p > threshold) expand.add(i); });
+	// the import/constants header is small and often edited (new imports): always keep it whole when short
+	if (blocks[0]?.name.startsWith("(header") && blocks[0].to - blocks[0].from < 20) expand.add(0);
 	const outline = cands.views.find((v) => v.kind === "outline");
 	const view = relevantView(text, cands.kind, blocks, expand, outline?.included);
 	if (view.chars >= cands.views[0].chars * 0.9) return { view: cands.views[0], blocks, probs };

@@ -245,6 +245,25 @@ already supports and this benchmark cannot score.
 Cost per run −23 % against baseline (was −8 % with the first version), cache hit back at baseline level, same pass rate,
 zero recalls. The offline gains show up live in the same direction and roughly the same proportion.
 
+### Round 5: outline-first for code
+
+Hypothesis: code is never sent whole; the agent gets every declaration signature (now at any nesting depth, from
+tree-sitter) plus the bodies the second step expands, and `recall` for anything else. Scored on holdout with 15 later
+edits as the real test.
+
+| variant | saved | edit-miss | quote-miss | ref-miss | objective | code saved |
+|---|---|---|---|---|---|---|
+| round-4 default (gate) | 74.2 % | 0/15 | 0.6 % | 1.9 % | 71.2 | 29.4 % |
+| outline-first, expand > 0.5 | 78.5 % | 1/15 | 0.6 % | 2.3 % | 41.7 | 59.4 % |
+| outline-first, expand > 0.35 | 77.0 % | 0/15 | 0.6 % | 2.3 % | 73.5 | 48.0 % |
+| outline-first, expand > 0.5, short import header always kept | **78.6 %** | **0/15** | 0.6 % | 2.3 % | **75.2** | 58.8 % |
+| outline-first with a "task relevance" expansion question (train) | 79.5 % | 2/6 | | | −90 | discarded |
+
+The single edit-miss at 0.5 was an added `import`: the header block was not expanded. Keeping short import headers whole
+closed it at no cost. The "is this block what the task is about" phrasing for expansion failed 2 of 6 edits on train,
+so the "will it need the body" phrasing stays. Nested signatures in the outline cut code ref-miss from 6.3 % to 4.7 %.
+New default: `JEV_MEMORY_PRESEND_CODE_POLICY=outline`, expansion threshold 0.5.
+
 ## Procedural graph prototype (`eval/action-graph.ts`)
 
 Following Lu et al., *Procedural Graphs*, I mined the 34 non-marathon runs into a graph of abstract actions (`read:src`, `edit:src`, `bash:test`, `write:test`, ...) with edge counts and success rates, then used jev as the guidance model at the 158 decision points of the 6 held-out marathon runs: given task, recent actions, the current node and its outgoing edges with statistics, choose the next procedure.
