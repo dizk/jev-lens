@@ -23,7 +23,7 @@ jev is a natural guidance model because every step of that loop is a typed judgm
 
 Mining is code: sessions are JSONL, tool calls are the actions, hidden tests give the outcome. The prototype mines (tool, target class) nodes from 34 runs and asks jev, at 158 decision points of the 6 held-out marathon runs, what should come next. See the numbers in `eval/runs/action-graph.md`. The interesting use is not prediction accuracy but *deviation detection*: the graph knows that after `edit:src` comes `bash:test` in 96 % of passing runs; an agent that goes `edit:src → final_answer` is off the path, and a one-line nudge ("run the tests before finishing") injected as a custom message costs nothing when the agent is on the path.
 
-Where it plugs in: `before_agent_start` / `turn_end` in this extension; the graph lives in `.pi/jev-context-graph.json` and is refined from `results.jsonl`-style outcomes or from the user's own thumbs-up/down.
+Where it plugs in: `before_agent_start` / `turn_end` in this extension; the graph lives in `.pi/jev-lens-graph.json` and is refined from `results.jsonl`-style outcomes or from the user's own thumbs-up/down.
 
 ## 3. Episodic memory index instead of a flat memory file
 

@@ -5,9 +5,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentMessage } from "../src/pi-types.ts";
 import { STUB_PREFIX } from "../src/policy.ts";
 
-process.env.JEV_CONTEXT_CLASSIFIER = "mock";
-process.env.JEV_CONTEXT_MODE = "rolling";
-process.env.JEV_CONTEXT_LOG = "0";
+process.env.JEV_LENS_CLASSIFIER = "mock";
+process.env.JEV_LENS_MODE = "rolling";
+process.env.JEV_LENS_LOG = "0";
 
 type Handler = (event: any, ctx: any) => Promise<any> | any;
 
@@ -89,14 +89,14 @@ describe("extension wiring (mock classifier, rolling mode)", () => {
 		const sent3 = (r.messages[2] as any).content[0].text as string;
 		expect(sent3.startsWith(STUB_PREFIX)).toBe(true);
 		expect(sent3).toContain("read big.txt");
-		const applied = entries.filter((e) => e.customType === "jev-context" && e.data.decision.status === "applied");
+		const applied = entries.filter((e) => e.customType === "jev-lens" && e.data.decision.status === "applied");
 		expect(applied.length).toBe(1);
 		expect(applied[0].data.decision.appliedAtCall).toBe(3);
 
 		// call 4: identical transform, nothing newly applied
 		const r4 = await emit("context", { messages: [...msgs] }, ctx);
 		expect((r4.messages[2] as any).content[0].text).toBe(sent3);
-		expect(entries.filter((e) => e.customType === "jev-context").length).toBe(2); // pending + applied, no more
+		expect(entries.filter((e) => e.customType === "jev-lens").length).toBe(2); // pending + applied, no more
 		// small result untouched
 		expect((r4.messages[4] as any).content[0].text).toBe("ok");
 	});
@@ -108,7 +108,7 @@ describe("extension wiring (mock classifier, rolling mode)", () => {
 		const big = "y".repeat(12000);
 		entries.push({
 			type: "custom",
-			customType: "jev-context",
+			customType: "jev-lens",
 			data: { kind: "decision", decision: { id: "c9", toolName: "read", bucket: "forget", durable: false, p: { needed: 0.1, outcomeOnly: 0, durable: 0 }, summary: "read old.txt", tokensBefore: 3000, decidedAt: 1, status: "applied", appliedAtCall: 2 } },
 		});
 		const ctx = ctxFor(cwd, entries);
@@ -134,8 +134,8 @@ describe("pre-send compression and recall (mock)", () => {
 		expect(sent.length).toBeLessThan(code.length * 0.6);
 		expect(sent).toContain("export function normalizeCategory");
 		expect(sent).toContain('recall(id: "c7")');
-		expect(r.details.jevContext.full).toBe(code);
-		expect(["outline", "relevant"]).toContain(r.details.jevContext.view);
+		expect(r.details.jevLens.full).toBe(code);
+		expect(["outline", "relevant"]).toContain(r.details.jevLens.view);
 
 		const recall = tools.get("recall");
 		expect(recall).toBeDefined();
@@ -172,19 +172,19 @@ describe("TUI integration", () => {
 		const { readFileSync } = await import("node:fs");
 		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
 		const r = await emit("tool_result", { toolName: "read", toolCallId: "c9", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], details: undefined, isError: false }, ctx);
-		expect(r.details.jevContext.included.length).toBeGreaterThan(3);
+		expect(r.details.jevLens.included.length).toBeGreaterThan(3);
 		const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
 		const comp = tools.get("read").renderResult({ content: r.content }, { expanded: false }, theme, { toolCallId: "c9" });
 		const text = String(comp.render(200).join("\n"));
-		expect(text).toContain("jev-context");
+		expect(text).toContain("jev-lens");
 		expect(text).toMatch(/of \d+ tokens \(−\d+ %\)/);
 		const plain = tools.get("read").renderResult({ content: [{ type: "text", text: "a\nb" }] }, { expanded: false }, theme, { toolCallId: "nope" });
 		expect(String(plain.render(80).join("\n"))).toContain("2 lines");
 		const notes: string[] = [];
 		const cmdCtx = { ...ctx, hasUI: false, mode: "print", ui: { notify: (m: string) => notes.push(m), setStatus() {} } };
-		await commands.get("jev-context").handler("diff", cmdCtx);
+		await commands.get("jev-lens").handler("diff", cmdCtx);
 		expect(notes[0]).toContain("src/categories.js");
-		await commands.get("jev-context").handler("list", cmdCtx);
+		await commands.get("jev-lens").handler("list", cmdCtx);
 		expect(notes[1]).toMatch(/outline|relevant/);
 	});
 });
@@ -202,14 +202,14 @@ describe("status line", () => {
 		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
 		const reduced = await emit("tool_result", { toolName: "read", toolCallId: "r1", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], isError: false }, ctx);
 		expect(reduced?.content?.[0]?.text.length).toBeLessThan(code.length);
-		expect(statuses.at(-1)).toMatch(/^jev-context\(mock\) \(presend −\d/); // no usage yet: no percentage
+		expect(statuses.at(-1)).toMatch(/^jev-lens\(mock\) \(presend −\d/); // no usage yet: no percentage
 		const r1 = { ...toolResult("r1", reduced.content[0].text), details: reduced.details } as any;
 		const msgs = [user("task"), assistant("reading", [{ id: "r1", name: "read", arguments: { path: "src/categories.js" } }]), r1];
 		await emit("context", { messages: msgs }, ctx);
 		const a = { ...assistant("done"), usage: { input: 1000, cacheRead: 0, output: 10 } } as any;
 		await emit("message_end", { message: a }, ctx);
 		const last = statuses.at(-1)!;
-		const m = /^jev-context\(mock\) −(\d+)% of input \(presend −[\d.]+k · 1\/1 · 0 recalls, pruned −0\.0k · 0, 0 notes\)$/.exec(last);
+		const m = /^jev-lens\(mock\) −(\d+)% of input \(presend −[\d.]+k · 1\/1 · 0 recalls, pruned −0\.0k · 0, 0 notes\)$/.exec(last);
 		expect(m, last).not.toBeNull();
 		const saved = Math.round(code.length / 4) - Math.round(reduced.content[0].text.length / 4);
 		const expected = Math.round((100 * saved) / (1000 + saved));
@@ -217,22 +217,22 @@ describe("status line", () => {
 	});
 });
 
-describe("/jev-context key", () => {
+describe("/jev-lens key", () => {
 	it("stores a key given as argument and reports where", async () => {
 		const mod: any = await import("../index.ts");
 		const { pi, emit, entries, commands } = fakePi();
 		mod.default(pi);
 		const cwd = mkdtempSync(join(tmpdir(), "jevext-"));
-		process.env.JEV_CONTEXT_KEY_FILE = join(cwd, "jev-context.json");
+		process.env.JEV_LENS_KEY_FILE = join(cwd, "jev-lens.json");
 		const notes: string[] = [];
 		const ctx = { ...ctxFor(cwd, entries), ui: { notify: (m: string) => notes.push(m), setStatus() {}, input: async () => "ts_typed" } };
 		await emit("session_start", {}, ctx);
-		await commands.get("jev-context").handler("key ts_given", ctx);
+		await commands.get("jev-lens").handler("key ts_given", ctx);
 		const { readFileSync } = await import("node:fs");
-		expect(JSON.parse(readFileSync(join(cwd, "jev-context.json"), "utf8"))).toEqual({ apiKey: "ts_given" });
+		expect(JSON.parse(readFileSync(join(cwd, "jev-lens.json"), "utf8"))).toEqual({ apiKey: "ts_given" });
 		expect(notes.at(-1)).toContain("key stored in");
-		await commands.get("jev-context").handler("key", ctx); // prompts when no argument
-		expect(JSON.parse(readFileSync(join(cwd, "jev-context.json"), "utf8"))).toEqual({ apiKey: "ts_typed" });
-		delete process.env.JEV_CONTEXT_KEY_FILE;
+		await commands.get("jev-lens").handler("key", ctx); // prompts when no argument
+		expect(JSON.parse(readFileSync(join(cwd, "jev-lens.json"), "utf8"))).toEqual({ apiKey: "ts_typed" });
+		delete process.env.JEV_LENS_KEY_FILE;
 	});
 });

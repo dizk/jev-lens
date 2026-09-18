@@ -3,7 +3,7 @@ import type { Config } from "./config.ts";
 import type { Bucket, Decision } from "./types.ts";
 import { contentText, estimateTokensOfText } from "./text.ts";
 
-export const STUB_PREFIX = "[jev-context pruned:";
+export const STUB_PREFIX = "[jev-lens pruned:";
 
 export function stubText(summary: string): string {
 	return `${STUB_PREFIX} ${summary}. The output was judged no longer needed; call the tool again if you need it.]`;
@@ -15,7 +15,7 @@ export function trimText(text: string, headLines: number, tailLines: number): st
 	const dropped = lines.length - headLines - tailLines;
 	return [
 		...lines.slice(0, headLines),
-		`[jev-context trimmed ${dropped} lines here; only the head and tail were judged useful. Call the tool again for the full output.]`,
+		`[jev-lens trimmed ${dropped} lines here; only the head and tail were judged useful. Call the tool again for the full output.]`,
 		...lines.slice(-tailLines),
 	].join("\n");
 }

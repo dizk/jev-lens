@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { keyFilePath, readStoredKey, resolveApiKey, storeKey } from "../src/config.ts";
 
 describe("TypeSafe API key resolution", () => {
-	const saved = { file: process.env.JEV_CONTEXT_KEY_FILE, key: process.env.TYPESAFE_API_KEY };
+	const saved = { file: process.env.JEV_LENS_KEY_FILE, key: process.env.TYPESAFE_API_KEY };
 	afterEach(() => {
-		if (saved.file === undefined) delete process.env.JEV_CONTEXT_KEY_FILE; else process.env.JEV_CONTEXT_KEY_FILE = saved.file;
+		if (saved.file === undefined) delete process.env.JEV_LENS_KEY_FILE; else process.env.JEV_LENS_KEY_FILE = saved.file;
 		if (saved.key === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = saved.key;
 	});
 	it("stores the key user-only and reads it back; the environment wins when set", () => {
 		const dir = mkdtempSync(join(tmpdir(), "jevkey-"));
-		process.env.JEV_CONTEXT_KEY_FILE = join(dir, "sub", "jev-context.json");
+		process.env.JEV_LENS_KEY_FILE = join(dir, "sub", "jev-lens.json");
 		delete process.env.TYPESAFE_API_KEY;
 		expect(readStoredKey()).toBeUndefined();
 		expect(resolveApiKey()).toBeUndefined();
@@ -27,8 +27,8 @@ describe("TypeSafe API key resolution", () => {
 	});
 	it("ignores a malformed key file", () => {
 		const dir = mkdtempSync(join(tmpdir(), "jevkey-"));
-		process.env.JEV_CONTEXT_KEY_FILE = join(dir, "k.json");
-		writeFileSync(process.env.JEV_CONTEXT_KEY_FILE, "{not json");
+		process.env.JEV_LENS_KEY_FILE = join(dir, "k.json");
+		writeFileSync(process.env.JEV_LENS_KEY_FILE, "{not json");
 		expect(readStoredKey()).toBeUndefined();
 	});
 });

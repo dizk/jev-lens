@@ -416,7 +416,7 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 
 export function footer(view: View, toolCallId: string, total: number): string {
 	if (view.kind === "full") return "";
-	return `\n\n[jev-context: showing the "${view.kind}" view, ${view.lines} of ${total} lines. Omitted lines are marked ⋯. Call recall(id: "${toolCallId}") for the full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.]`;
+	return `\n\n[jev-lens: showing the "${view.kind}" view, ${view.lines} of ${total} lines. Omitted lines are marked ⋯. Call recall(id: "${toolCallId}") for the full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.]`;
 }
 
 export interface Block {

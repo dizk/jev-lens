@@ -69,7 +69,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	if (args.cond.startsWith("jev")) piArgs.unshift("-e", join(ROOT, "index.ts"));
 	piArgs.push(task.prompt);
 	const t0 = Date.now();
-	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_CONTEXT_MODE: args.mode, JEV_CONTEXT_PRESEND: args.cond.includes("presend") ? "1" : "0", ...(args.variant ? { JEV_CONTEXT_VARIANT: args.variant } : {}) } });
+	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_LENS_MODE: args.mode, JEV_LENS_PRESEND: args.cond.includes("presend") ? "1" : "0", ...(args.variant ? { JEV_LENS_VARIANT: args.variant } : {}) } });
 	const wallMs = Date.now() - t0;
 	writeFileSync(join(dir, "pi.stderr"), r.err);
 
@@ -98,7 +98,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 		cond: args.cond, task: task.id, n, ok: !r.timedOut && t.code === 0, testExit: t.code, timedOut: r.timedOut, wallMs,
 		calls, input, cacheRead, output, toolCalls, cacheHit: input + cacheRead > 0 ? cacheRead / (input + cacheRead) : 0, finalPrompt, recalls, dir,
 	};
-	const logPath = join(work, ".pi", "jev-context.log");
+	const logPath = join(work, ".pi", "jev-lens.log");
 	if (existsSync(logPath)) {
 		let pruned = 0, decisions = 0;
 		for (const line of readFileSync(logPath, "utf8").split("\n")) {

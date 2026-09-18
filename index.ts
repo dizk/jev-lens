@@ -1,5 +1,5 @@
 /**
- * pi-jev-context: cache-aware memory routing for pi.
+ * pi-jev-lens: cache-aware memory routing for pi.
  *
  * Every tool result is classified once by jev (TypeSafe System One) after the agent has
  * seen it and acted on it. The decision (keep / trim / forget, plus durable yes/no) is
@@ -11,7 +11,7 @@
  *   trim            – head + tail only
  *   forget          – replaced by a one-line stub (tool results are never removed:
  *                     every function_call needs a matching output)
- *   file (durable)  – appended to <project>/.pi/jev-context.md, loaded at session start
+ *   file (durable)  – appended to <project>/.pi/jev-lens.md, loaded at session start
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -45,7 +45,7 @@ export default function (pi: ExtensionAPI) {
 	let usingMock = cfg.forceMock || !cfg.apiKey;
 	let classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
 	let presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
-	/** Switch from the mock to jev once a key is available (from `/jev-context key`), without a restart. */
+	/** Switch from the mock to jev once a key is available (from `/jev-lens key`), without a restart. */
 	const useKey = (apiKey: string) => {
 		cfg.apiKey = apiKey;
 		usingMock = cfg.forceMock;
@@ -105,14 +105,14 @@ export default function (pi: ExtensionAPI) {
 		return sent > 0 ? Math.round((100 * kept) / (sent + kept)) : undefined;
 	};
 	const statusText = () => {
-		const tag = usingMock ? "jev-context(mock)" : "jev-context";
+		const tag = usingMock ? "jev-lens(mock)" : "jev-lens";
 		const pct = cutShare();
 		const lead = pct === undefined ? tag : `${tag} −${pct}% of input`;
 		return `${lead} (presend −${(presendTotals.tokensSaved / 1000).toFixed(1)}k · ${presendTotals.compressed}/${presendTotals.considered} · ${presendTotals.recalls} recalls, pruned −${(totals.pruned / 1000).toFixed(1)}k · ${totals.applied}, ${totals.notes} notes)`;
 	};
 	const status = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
-		ctx.ui.setStatus("jev-context", statusText());
+		ctx.ui.setStatus("jev-lens", statusText());
 	};
 
 	const persist = (d: Decision) => pi.appendEntry(ENTRY_TYPE, { kind: "decision", decision: { ...d } });
@@ -140,11 +140,11 @@ export default function (pi: ExtensionAPI) {
 		records.length = 0;
 		recordById.clear();
 		presendTotals = { considered: 0, compressed: 0, tokensSaved: 0, recalls: 0 };
-		memoryPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-context.md");
+		memoryPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-lens.md");
 		memorySnapshot = readMemoryFile(memoryPath);
 		try {
 			mkdirSync(join(ctx.cwd, CONFIG_DIR_NAME), { recursive: true });
-			logPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-context.log");
+			logPath = join(ctx.cwd, CONFIG_DIR_NAME, "jev-lens.log");
 		} catch {
 			logPath = "";
 		}
@@ -155,16 +155,16 @@ export default function (pi: ExtensionAPI) {
 				if (!firstUser) firstUser = t;
 				latestUser = t;
 			} else if (entry.message.role === "toolResult") {
-				const d = (entry.message as { details?: { jevContext?: { full?: string; view?: string; args?: unknown; included?: number[]; kind?: string; needsFull?: number; p?: Record<string, number> } } }).details?.jevContext;
+				const d = (entry.message as { details?: { jevLens?: { full?: string; view?: string; args?: unknown; included?: number[]; kind?: string; needsFull?: number; p?: Record<string, number> } } }).details?.jevLens;
 				if (d?.full) {
 					fullOutputs.set(entry.message.toolCallId, { text: d.full, toolName: entry.message.toolName, args: d.args, view: d.view ?? "?" });
-					const sent = contentText(entry.message.content).replace(/\n\n\[jev-context:[\s\S]*$/, "");
+					const sent = contentText(entry.message.content).replace(/\n\n\[jev-lens:[\s\S]*$/, "");
 					remember({ id: entry.message.toolCallId, toolName: entry.message.toolName, args: d.args, kind: d.kind ?? "?", view: d.view ?? "?", tokensBefore: estimateTokensOfText(d.full), tokensAfter: estimateTokensOfText(sent), full: d.full, sent, included: d.included ?? [], needsFull: d.needsFull, pFull: d.p?.full, recalls: 0, at: entry.message.timestamp });
 				}
 			}
 		}
 		log({ event: "session_start", mode: cfg.mode, enabled: cfg.enabled, mock: usingMock, ledger: ledger.size, variant: variant.name ?? null });
-		if (ctx.hasUI && usingMock && !cfg.forceMock) ctx.ui.notify("jev-context: no TypeSafe API key. Run /jev-context key (or set TYPESAFE_API_KEY). Using the mock classifier until then.", "warning");
+		if (ctx.hasUI && usingMock && !cfg.forceMock) ctx.ui.notify("jev-lens: no TypeSafe API key. Run /jev-lens key (or set TYPESAFE_API_KEY). Using the mock classifier until then.", "warning");
 		status(ctx);
 	});
 
@@ -434,7 +434,7 @@ export default function (pi: ExtensionAPI) {
 			presendTotals.tokensSaved += tokens - estimateTokensOfText(view.text);
 			fullOutputs.set(event.toolCallId, { text, toolName: event.toolName, args: event.input, view: view.kind });
 			remember({ id: event.toolCallId, toolName: event.toolName, args: event.input, kind: cands.kind, view: view.kind, tokensBefore: tokens, tokensAfter: estimateTokensOfText(view.text), full: text, sent: view.text, included: view.included, needsFull: answer.needsFull, pFull: answer.probabilities.full, recalls: 0, at: Date.now() });
-			const details = { ...((event.details as object) ?? {}), jevContext: { full: text, view: view.kind, kind: cands.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull, included: view.included } };
+			const details = { ...((event.details as object) ?? {}), jevLens: { full: text, view: view.kind, kind: cands.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull, included: view.included } };
 			status(ctx);
 			return { content: [{ type: "text", text: view.text + footer(view, event.toolCallId, totalLines) }], details };
 		} catch (err) {
@@ -446,9 +446,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "recall",
 		label: "Recall",
-		description: "Return the full output of an earlier tool call that jev-context showed in a reduced view (or that was pruned). Pass the id from the [jev-context: ...] note. Optionally restrict to a line range \"a-b\" or to lines matching a pattern (case-insensitive substring or /regex/).",
+		description: "Return the full output of an earlier tool call that jev-lens showed in a reduced view (or that was pruned). Pass the id from the [jev-lens: ...] note. Optionally restrict to a line range \"a-b\" or to lines matching a pattern (case-insensitive substring or /regex/).",
 		parameters: Type.Object({
-			id: Type.String({ description: "toolCallId from the jev-context note" }),
+			id: Type.String({ description: "toolCallId from the jev-lens note" }),
 			lines: Type.Optional(Type.String({ description: "Line range like 120-180 (1-based, inclusive)" })),
 			pattern: Type.Optional(Type.String({ description: "Only lines matching this substring or /regex/, with 2 lines of context" })),
 		}),
@@ -485,7 +485,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ---- TUI: built-in tools re-registered so compressed results show what was saved -----------
 
-	if (process.env.JEV_CONTEXT_UI !== "0") {
+	if (process.env.JEV_LENS_UI !== "0") {
 		const cwd = process.cwd();
 		const originals: Record<string, ReturnType<typeof createReadTool>> = {
 			read: createReadTool(cwd) as ReturnType<typeof createReadTool>,
@@ -534,8 +534,8 @@ export default function (pi: ExtensionAPI) {
 
 	// ---- commands ----------------------------------------------------------------------
 
-	pi.registerCommand("jev-context", {
-		description: "jev-context: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | file | key [api-key] (store your TypeSafe key)",
+	pi.registerCommand("jev-lens", {
+		description: "jev-lens: stats | list (compressed results) | diff [n] (original vs sent, overlay) | decisions | file | key [api-key] (store your TypeSafe key)",
 		handler: async (args, ctx) => {
 			const sub = (args ?? "").trim();
 			if (sub === "key" || sub.startsWith("key ")) {
@@ -544,7 +544,7 @@ export default function (pi: ExtensionAPI) {
 				if (!key) { ctx.ui.notify("no key entered", "info"); return; }
 				const where = storeKey(key);
 				useKey(key);
-				ctx.ui.notify(`jev-context: key stored in ${where}; jev is active from the next tool result`, "info");
+				ctx.ui.notify(`jev-lens: key stored in ${where}; jev is active from the next tool result`, "info");
 				status(ctx);
 				return;
 			}
@@ -577,7 +577,7 @@ export default function (pi: ExtensionAPI) {
 			const hit = totals.input + totals.cacheRead > 0 ? Math.round((100 * totals.cacheRead) / (totals.input + totals.cacheRead)) : 0;
 			ctx.ui.notify(
 				[
-					`mode=${cfg.mode} enabled=${cfg.enabled} classifier=${usingMock ? "mock (no key: /jev-context key)" : cfg.model} key=${process.env.TYPESAFE_API_KEY ? "env" : cfg.apiKey ? keyFilePath() : "none"}`,
+					`mode=${cfg.mode} enabled=${cfg.enabled} classifier=${usingMock ? "mock (no key: /jev-lens key)" : cfg.model} key=${process.env.TYPESAFE_API_KEY ? "env" : cfg.apiKey ? keyFilePath() : "none"}`,
 					`presend: ${presendTotals.compressed}/${presendTotals.considered} large results compressed, ≈${presendTotals.tokensSaved} tokens saved, ${presendTotals.recalls} recalls`,
 					`post-send: calls=${totals.calls} decisions=${ledger.size} applied=${totals.applied} pruned≈${totals.pruned} tokens`,
 					`cache: read=${totals.cacheRead} uncached=${totals.input} hit=${hit}%`,

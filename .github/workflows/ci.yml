@@ -16,4 +16,4 @@ jobs:
       - run: npm run typecheck
       - run: npm test
         env:
-          JEV_CONTEXT_CLASSIFIER: mock
+          JEV_LENS_CLASSIFIER: mock
