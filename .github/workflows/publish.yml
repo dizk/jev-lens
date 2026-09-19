@@ -49,7 +49,12 @@ jobs:
         env:
           JEV_LENS_CLASSIFIER: mock
       - run: npm pack --dry-run --workspace jev-lens --workspace pi-jev-lens
+      # A version that is already on npm (published by hand, or by an earlier run of this job) is skipped.
       - name: Publish jev-lens (core) with npm Trusted Publishing
-        run: npm publish --workspace jev-lens --provenance --access public
+        run: |
+          v=$(node -p "require('./packages/core/package.json').version")
+          if npm view "jev-lens@$v" version >/dev/null 2>&1; then echo "jev-lens@$v is already published, skipping"; else npm publish --workspace jev-lens --provenance --access public; fi
       - name: Publish pi-jev-lens with npm Trusted Publishing
-        run: npm publish --workspace pi-jev-lens --provenance --access public
+        run: |
+          v=$(node -p "require('./packages/pi/package.json').version")
+          if npm view "pi-jev-lens@$v" version >/dev/null 2>&1; then echo "pi-jev-lens@$v is already published, skipping"; else npm publish --workspace pi-jev-lens --provenance --access public; fi

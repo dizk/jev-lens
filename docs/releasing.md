@@ -52,5 +52,5 @@ failed job. You do not need to recreate the release.
 
 If npm reports that the version already exists, run `npm view <package>@<version> version` to inspect what is
 published. Do not move the release tag or try to overwrite an npm version. For another publication, prepare a new
-version and release. The workflow publishes the core first; if it succeeded and the pi extension failed, rerunning
-the job skips the core (npm reports it as already published) and publishes the extension.
+version and release. The workflow skips a package whose version is already on npm, so a rerun after a partial failure, or a release
+after a manual publish, only publishes what is missing.
