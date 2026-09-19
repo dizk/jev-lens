@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 (2026-09-19)
+
+- Compression warnings and statistics now show the HTTP status when available.
+- HTTP 402 errors now point to TypeSafe credits and billing. Authentication, permission, usage-limit, request-format, and server errors have separate advice.
+- Timeout, connection, SDK, and unclassified errors no longer share one generic connection warning.
+- Provider response bodies, headers, and credentials remain hidden.
+
 ## 0.4.0 (2026-09-19)
 
 Use ctrl+o to compare full and compressed tool output. The `/jev-lens diff` command is removed.
