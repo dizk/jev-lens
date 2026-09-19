@@ -1,0 +1,57 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      # Trusted Publishing requires npm 11.5.1 or newer.
+      - run: npm install --global npm@11
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          if (process.env.RELEASE_TAG !== `v${pkg.version}`) {
+            throw new Error('Release tag must match package.json: v' + pkg.version);
+          }
+          if (lock.version !== pkg.version || lock.packages[''].version !== pkg.version) {
+            throw new Error('package-lock.json version must match package.json');
+          }
+          if (process.env.RELEASE_PRERELEASE === 'true' || pkg.version.includes('-')) {
+            throw new Error('This workflow publishes stable releases only');
+          }
+          NODE
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          JEV_LENS_CLASSIFIER: mock
+      - run: npm pack --dry-run
+      - name: Publish with npm Trusted Publishing
+        run: npm publish --provenance --access public

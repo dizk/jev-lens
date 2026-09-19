@@ -282,4 +282,6 @@ Issues and pull requests are welcome at [github.com/dizk/pi-jev-lens](https://gi
 built or chosen must come with benchmark numbers. If the change touches code views, you must use the 500-trajectory
 slice.
 
+For npm publication through GitHub Releases, see [Release to npm](docs/releasing.md).
+
 MIT, see LICENSE.
