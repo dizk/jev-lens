@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 (2026-09-19)
+
+Use ctrl+o to compare full and compressed tool output. The `/jev-lens diff` command is removed.
+
+- Expanded results show full and compressed output side by side, with retained lines aligned and omitted lines marked.
+- Long lines wrap. Narrow terminals show the two versions one below the other.
+- Collapsed results show pruned and original line counts, plus a `ctrl+o for diff` hint that follows your configured keybinding.
+- Older results retain their comparison through stored result details, even after they leave the recent-results list.
+- Removed the diff overlay and result-number completion. Updated help and documentation.
+
+Compression rules and model input are unchanged. Use pi 0.84.3 or newer.
+
 ## 0.3.0 (2026-09-19)
 
 Use pi 0.84.3 or newer with this release.
