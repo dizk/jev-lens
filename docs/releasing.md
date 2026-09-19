@@ -42,7 +42,7 @@ All three packages and the root share one version.
 8. Publish the release without selecting the prerelease option, then check
    [GitHub Actions](https://github.com/dizk/jev-lens/actions/workflows/publish.yml).
 
-The tag must match the version in `packages/core/package.json` and `packages/pi/package.json`. The workflow rejects
+The tag must match the version in `packages/core/package.json` and `packages/pi-jev-lens/package.json`. The workflow rejects
 prereleases to prevent an accidental update to npm's `latest` version.
 
 ## If publication fails

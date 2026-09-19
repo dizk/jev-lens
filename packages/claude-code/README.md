@@ -90,7 +90,7 @@ The ones that matter most:
 | `JEV_LENS_KEY_FILE` | `~/.claude/jev-lens/key.json` | where the key file lives |
 | `JEV_LENS_HOOK_TIMEOUT_MS` | `30000` | the hook gives up and returns the original after this |
 
-The full list is in the [pi extension's README](https://github.com/dizk/jev-lens/tree/main/packages/pi#configuration-environment).
+The full list is in the [pi extension's README](https://github.com/dizk/jev-lens/tree/main/packages/pi-jev-lens#configuration-environment).
 
 ## Files
 

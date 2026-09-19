@@ -15,7 +15,7 @@ This repository holds three packages that share one core:
 | package | what it is | install |
 |---|---|---|
 | [`jev-lens`](packages/core) | the host-independent core: candidate views, tree-sitter outlines, the jev questions and decision rule, the recall slicing | `npm install jev-lens` |
-| [`pi-jev-lens`](packages/pi) | the extension for [pi](https://github.com/earendil-works/pi-mono): pre-send compression, the `recall` tool, a comparison view in the TUI, optional post-send pruning | `pi install npm:pi-jev-lens` |
+| [`pi-jev-lens`](packages/pi-jev-lens) | the extension for [pi](https://github.com/earendil-works/pi-mono): pre-send compression, the `recall` tool, a comparison view in the TUI, optional post-send pruning | `pi install npm:pi-jev-lens` |
 | [`jev-lens` plugin for Claude Code](packages/claude-code) | a PostToolUse hook that replaces large Read, Bash and Grep results before Claude sees them, plus an MCP server with `recall` and `stats` | `/plugin marketplace add dizk/jev-lens` then `/plugin install jev-lens@jev-lens` |
 
 ## What the numbers say
@@ -58,9 +58,9 @@ Three results shaped the design:
 
 ```
 packages/core         jev-lens on npm: src/views.ts, presend.ts, lens.ts, recall.ts, treesitter.ts, config.ts
-packages/pi           pi-jev-lens on npm: index.ts (pi wiring), src/ui.ts, src/policy.ts (post-send pruning)
+packages/pi-jev-lens           pi-jev-lens on npm: index.ts (pi wiring), src/ui.ts, src/policy.ts (post-send pruning)
 packages/claude-code  the Claude Code plugin: hooks/hooks.json, .mcp.json, src/hook.ts, src/mcp.ts
-eval/                 the benchmark harness, replay scripts and fixtures (see packages/pi/README.md, Evaluation)
+eval/                 the benchmark harness, replay scripts and fixtures (see packages/pi-jev-lens/README.md, Evaluation)
 STATUS.md             the research log: every variant tried, its numbers, and why the defaults are what they are
 ```
 
@@ -72,7 +72,7 @@ npm install                      # links the workspaces and builds packages/core
 echo 'TYPESAFE_API_KEY=...' > .env
 npm test                         # all packages, mock classifier where no key is needed
 npm run typecheck
-pi -e ./packages/pi/index.ts                    # try the pi extension
+pi -e ./packages/pi-jev-lens/index.ts                    # try the pi extension
 claude --plugin-dir ./packages/claude-code      # try the Claude Code plugin
 ```
 

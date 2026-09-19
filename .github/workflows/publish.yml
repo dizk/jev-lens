@@ -36,7 +36,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           const tag = process.env.RELEASE_TAG;
-          for (const dir of ['packages/core', 'packages/pi']) {
+          for (const dir of ['packages/core', 'packages/pi-jev-lens']) {
             const pkg = JSON.parse(readFileSync(`${dir}/package.json`, 'utf8'));
             if (tag !== `v${pkg.version}`) throw new Error(`Release tag ${tag} must match ${dir}/package.json: v${pkg.version}`);
             if (pkg.version.includes('-')) throw new Error('This workflow publishes stable releases only');
@@ -56,5 +56,5 @@ jobs:
           if npm view "jev-lens@$v" version >/dev/null 2>&1; then echo "jev-lens@$v is already published, skipping"; else npm publish --workspace jev-lens --provenance --access public; fi
       - name: Publish pi-jev-lens with npm Trusted Publishing
         run: |
-          v=$(node -p "require('./packages/pi/package.json').version")
+          v=$(node -p "require('./packages/pi-jev-lens/package.json').version")
           if npm view "pi-jev-lens@$v" version >/dev/null 2>&1; then echo "pi-jev-lens@$v is already published, skipping"; else npm publish --workspace pi-jev-lens --provenance --access public; fi

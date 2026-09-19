@@ -46,7 +46,7 @@ What else is exported:
 | `JevClassifier`, `MockClassifier`, `buildItemState` | the post-send "is this still needed" questions the pi extension uses for optional pruning |
 | `Health`, `estimateTokensOfText`, `contentText`, `truncate`, `describeToolCall` | helpers |
 
-The environment variables are documented in the [pi extension's README](https://github.com/dizk/jev-lens/tree/main/packages/pi#configuration-environment);
+The environment variables are documented in the [pi extension's README](https://github.com/dizk/jev-lens/tree/main/packages/pi-jev-lens#configuration-environment);
 the core reads the same ones. Research log and benchmark numbers: [STATUS.md](https://github.com/dizk/jev-lens/blob/main/STATUS.md).
 
 MIT.

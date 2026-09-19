@@ -99,7 +99,7 @@ For development, clone the repository and load it directly:
 ```sh
 git clone https://github.com/dizk/jev-lens.git && cd jev-lens && npm install
 echo 'TYPESAFE_API_KEY=...' > .env
-pi -e ./packages/pi/index.ts
+pi -e ./packages/pi-jev-lens/index.ts
 ```
 
 ## How it works
@@ -271,10 +271,10 @@ as a library; its README shows the API. What is where:
 | the jev questions, the state shape, the decision rule, block expansion | `packages/core/src/presend.ts` | `@typesafe-ai/sdk` |
 | the parser for bash display commands | `packages/core/src/shell-display.ts` | nothing |
 | the recall tool's slicing | `packages/core/src/recall.ts` | nothing |
-| the wiring for pi (tool_result, the recall tool, the UI) | `packages/pi/index.ts`, `packages/pi/src/ui.ts` | pi |
+| the wiring for pi (tool_result, the recall tool, the UI) | `packages/pi-jev-lens/index.ts`, `packages/pi-jev-lens/src/ui.ts` | pi |
 | the wiring for Claude Code (PostToolUse hook, MCP server) | `packages/claude-code/src/` | Claude Code |
 | the benchmark and the metrics on real trajectories | `eval/presend-score.ts`, `eval/bench/` | run `eval/bench/fetch.sh` first |
-| post-send decisions and the frozen ledger (pi only) | `packages/core/src/classifier.ts`, `packages/pi/src/policy.ts`, `packages/pi/src/ledger.ts` | `@typesafe-ai/sdk` |
+| post-send decisions and the frozen ledger (pi only) | `packages/core/src/classifier.ts`, `packages/pi-jev-lens/src/policy.ts`, `packages/pi-jev-lens/src/ledger.ts` | `@typesafe-ai/sdk` |
 
 The sequence is this. When a large tool result arrives, code builds the views from the text. jev says which view is
 enough and whether the exact text is needed. Code applies the selection policy. If needed, a second request expands

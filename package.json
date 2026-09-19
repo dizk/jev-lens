@@ -8,7 +8,7 @@
   "type": "module",
   "workspaces": [
     "packages/core",
-    "packages/pi",
+    "packages/pi-jev-lens",
     "packages/claude-code"
   ],
   "engines": {

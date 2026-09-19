@@ -13,8 +13,8 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "jev-lens";
 import { loadConfig } from "jev-lens";
-import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "../packages/pi/src/policy.ts";
-import type { AgentMessage } from "../packages/pi/src/pi-types.ts";
+import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "../packages/pi-jev-lens/src/policy.ts";
+import type { AgentMessage } from "../packages/pi-jev-lens/src/pi-types.ts";
 import { contentText, describeToolCall, estimateTokensOfText } from "jev-lens";
 import type { Decision } from "jev-lens";
 

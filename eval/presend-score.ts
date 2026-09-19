@@ -6,7 +6,7 @@ import { matchesGlob, posix } from "node:path";
 import { displayedFiles } from "jev-lens";
 import type { Config } from "jev-lens";
 import { buildPresendState, decideView, expandRelevantBlocks, type PresendClassifier } from "jev-lens";
-import type { AgentMessage } from "../packages/pi/src/pi-types.ts";
+import type { AgentMessage } from "../packages/pi-jev-lens/src/pi-types.ts";
 import { contentText, estimateTokensOfText } from "jev-lens";
 import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "jev-lens";
 
