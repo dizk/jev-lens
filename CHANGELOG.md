@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Claude Code plugin: `stats` reports how many compressed results Claude recalled, the number to watch while testing
+  whether the views hide what the task needed. Recall log records now carry the session of the stored output.
+
 ## 0.5.1 (2026-09-19)
 
 - Claude Code plugin: `src/statusline.ts` prints a status line segment for the current session, in the shape of the

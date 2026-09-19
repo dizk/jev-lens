@@ -19,10 +19,13 @@ export function statsText(records = readLog(), now = Date.now(), sessionLimit = 
 		byKind.set(k, e);
 	}
 	const sessions = [...new Set(presend.map((r) => String(r.session ?? "")))].length;
+	const recalledIds = new Set(recalls.map((r) => r.id));
+	const recalled = compressed.filter((r) => recalledIds.has(r.id)).length;
 	const mock = presend.some((r) => r.mock === true);
 	const lines = [
 		`jev-lens: ${compressed.length} of ${presend.length} large results compressed across ${sessions} session${sessions === 1 ? "" : "s"}, ≈${saved} of ${total} tokens kept out of the prompt (${total ? Math.round((100 * saved) / total) : 0} %), ${recalls.length} recall${recalls.length === 1 ? "" : "s"}, ${errors.length} error${errors.length === 1 ? "" : "s"}.`,
 	];
+	if (compressed.length) lines.push(`Claude recalled ${recalled} of the ${compressed.length} compressed results (${Math.round((100 * recalled) / compressed.length)} %). A high share means views hid what the task needed.`);
 	if (mock) lines.push("Some decisions came from the mock classifier (no TypeSafe API key), which follows fixed rules instead of judging each result.");
 	lines.push("", "by kind:");
 	for (const [k, e] of byKind) lines.push(`  ${k.padEnd(8)} ${String(e.c).padStart(4)}/${String(e.n).padEnd(4)} compressed, ≈${e.saved} tokens saved`);

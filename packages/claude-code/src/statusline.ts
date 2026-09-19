@@ -33,8 +33,8 @@ export function sessionTotals(records: Record<string, unknown>[], sessionId: str
 			t.errors++;
 		}
 	}
-	// Recall records carry the output id only; count the ones that belong to this session's results.
-	for (const r of records) if (r.event === "recall" && typeof r.id === "string" && ids.has(r.id)) t.recalls++;
+	// Newer recall records carry the session; older ones are matched on the output id.
+	for (const r of records) if (r.event === "recall" && (r.session === sessionId || (r.session === undefined && typeof r.id === "string" && ids.has(r.id)))) t.recalls++;
 	return t;
 }
 

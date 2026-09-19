@@ -13,16 +13,17 @@ const records = [
 	{ t: 5, event: "recall", id: "t3", found: true },
 	{ t: 6, event: "recall", id: "t3", found: true, lines: "1-3" },
 	{ t: 7, event: "presend_error", session: "B", id: "t4", tool: "Bash", error: "TimeoutError" },
+	{ t: 8, event: "recall", id: "t9", found: false, session: "A" },
 ];
 
 describe("status line segment", () => {
 	it("sums one session's records and counts the recalls of its results", () => {
-		expect(sessionTotals(records, "A")).toEqual({ considered: 2, compressed: 1, tokensSaved: 1500, recalls: 1, errors: 0, mock: false });
+		expect(sessionTotals(records, "A")).toEqual({ considered: 2, compressed: 1, tokensSaved: 1500, recalls: 2, errors: 0, mock: false });
 		expect(sessionTotals(records, "B")).toEqual({ considered: 1, compressed: 1, tokensSaved: 8900, recalls: 2, errors: 1, mock: true });
 		expect(sessionTotals(records, "C")).toEqual({ considered: 0, compressed: 0, tokensSaved: 0, recalls: 0, errors: 0, mock: false });
 	});
 	it("reads like the pi extension's status line", () => {
-		expect(statusText(sessionTotals(records, "A"))).toBe("jev-lens −1.5k · 1/2 · 1 recall");
+		expect(statusText(sessionTotals(records, "A"))).toBe("jev-lens −1.5k · 1/2 · 2 recalls");
 		expect(statusText(sessionTotals(records, "B"))).toBe("jev-lens(mock)(degraded) −8.9k · 1/1 · 2 recalls");
 		expect(statusText(sessionTotals(records, "C"))).toBe("jev-lens −0.0k · 0/0 · 0 recalls");
 	});
@@ -31,9 +32,10 @@ describe("status line segment", () => {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, "log.jsonl"), `${records.map((r) => JSON.stringify(r)).join("\n")}\n`);
 		const script = new URL("../src/statusline.ts", import.meta.url).pathname;
-		const env = { ...process.env, JEV_LENS_DATA_DIR: dir, JEV_LENS_DISABLED: "" };
+		// HOME is an empty directory so the segment cannot pick up the logs of the machine that runs the tests.
+		const env = { ...process.env, HOME: mkdtempSync(join(tmpdir(), "jevhome-")), JEV_LENS_DATA_DIR: dir, JEV_LENS_DISABLED: "" };
 		const run = (input: string) => spawnSync(process.execPath, [script], { input, env, encoding: "utf8" });
-		expect(run(JSON.stringify({ session_id: "A", model: { display_name: "x" } })).stdout).toBe("jev-lens −1.5k · 1/2 · 1 recall");
+		expect(run(JSON.stringify({ session_id: "A", model: { display_name: "x" } })).stdout).toBe("jev-lens −1.5k · 1/2 · 2 recalls");
 		expect(run("not json").stdout).toBe("");
 		expect(run("{}").status).toBe(0);
 	});

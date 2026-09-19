@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { beforeAll, describe, expect, it } from "vitest";
 import { callTool, handle } from "../src/mcp.ts";
-import { saveOutput } from "../src/store.ts";
+import { readLog, saveOutput } from "../src/store.ts";
+import { statsText } from "../src/stats.ts";
 
 const text = Array.from({ length: 60 }, (_, i) => `line ${i + 1}${i === 9 ? " needle" : ""}`).join("\n");
 
@@ -30,8 +31,20 @@ describe("recall MCP server", () => {
 		expect(callTool("recall", { id: "../../etc/passwd" }).isError).toBe(true);
 		expect(callTool("recall", { id: "toolu_X", lines: "x" }).isError).toBe(true);
 	});
-	it("summarizes the log through stats", () => {
+	it("logs recalls with the session of the stored output, and reports the recall rate through stats", () => {
+		const log = readLog().filter((r) => r.event === "recall");
+		expect(log.filter((r) => r.found).length).toBeGreaterThan(0);
+		expect(log.filter((r) => r.found).every((r) => r.session === "s")).toBe(true);
+		expect(log.filter((r) => !r.found).every((r) => r.session === undefined)).toBe(true);
 		expect(callTool("stats", {}).content[0].text).toContain("jev-lens");
+		const records = [
+			{ t: 1, event: "presend", session: "s", id: "a", tool: "Bash", kind: "command", view: "focus", tokens: 2000, sentTokens: 400 },
+			{ t: 2, event: "presend", session: "s", id: "b", tool: "Read", kind: "code", view: "outline", tokens: 3000, sentTokens: 300 },
+			{ t: 3, event: "presend", session: "s", id: "c", tool: "Read", kind: "code", view: "full", tokens: 3000, sentTokens: 3000 },
+			{ t: 4, event: "recall", session: "s", id: "a", found: true },
+			{ t: 5, event: "recall", session: "s", id: "a", found: true, lines: "1-2" },
+		];
+		expect(statsText(records, 10)).toContain("Claude recalled 1 of the 2 compressed results (50 %)");
 	});
 	it("speaks newline-delimited JSON-RPC over stdio as a process", () => {
 		const server = new URL("../src/mcp.ts", import.meta.url).pathname;

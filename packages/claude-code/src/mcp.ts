@@ -41,7 +41,7 @@ export function callTool(name: string, args: Record<string, unknown>): { content
 	if (name !== "recall") return text(`Unknown tool ${name}`, true);
 	const id = typeof args.id === "string" ? args.id : "";
 	const hit = loadOutput(id);
-	appendLog({ event: "recall", id, found: !!hit, lines: args.lines, pattern: args.pattern });
+	appendLog({ event: "recall", id, found: !!hit, session: hit?.sessionId || undefined, lines: args.lines, pattern: args.pattern });
 	if (!hit) return text(recallMissText(id), true);
 	const slice = sliceRecall(hit, { lines: typeof args.lines === "string" ? args.lines : undefined, pattern: typeof args.pattern === "string" ? args.pattern : undefined });
 	return text(slice.text, !!slice.error);
