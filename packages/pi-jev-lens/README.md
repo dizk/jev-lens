@@ -221,8 +221,10 @@ whether the agent needed the text. The benchmark uses real OpenHands trajectorie
 - edit-miss: the agent later edited a line that the view had dropped.
 - quote-miss: the agent quoted text that the view had dropped.
 - ref-miss: the agent used an identifier that only existed in the dropped part.
+- recall-miss: in a recorded session with the extension, the agent recalled the result, and the replayed view would
+  still not have answered that recall (the whole output, a line range or a pattern). Only real sessions have recalls.
 
-An edit-miss counts five times in the objective, and edit-misses are rare. So you must score every change that
+The objective is saved% − 5·edit-miss% − 2·quote-miss% − ref-miss% − 2·recall-miss%. An edit-miss counts five times, and edit-misses are rare. So you must score every change that
 touches code views on the 500-trajectory slice, not only on the 100-trajectory holdout.
 
 | slice | large results | saved | edit-miss | quote-miss | ref-miss |

@@ -66,12 +66,17 @@ line numbers, so this does not affect them. `Bash` and `Grep` output is passed t
   1200 tokens or more. Images, `Edit` and `Write` results, other tools and MCP tools are untouched.
 - Decides once, before the first send, so the prompt cache is not disturbed. It never rewrites earlier messages;
   Claude Code has no hook for that, and the pi extension's optional post-send pruning does not exist here.
-- Reads the task, the latest user message and what Claude wrote before the call from the session transcript. The
-  transcript is written asynchronously and can lag the current turn; the hook uses whatever is there.
+- Reads the task, the latest user message and what Claude wrote before the call from the session transcript, the
+  way the pi extension reads them from the session. The text before the call is the text of the message that holds
+  the call; when Claude called the tool without saying anything (common, and its thinking is stored empty), the
+  latest text of the same turn is used, then the latest text of an earlier turn. The log records which
+  (`agentTextSource`). Sub-agents have their own transcript files next to the session's, and the hook finds a
+  sub-agent's call there. The transcript is written asynchronously and can lag the current turn
+  (`transcriptHasCall: false` in the log); the hook uses whatever is there.
 - Runs as one node process per large tool result: about 0.1 s of startup plus one or two jev requests of 0.4 to
   0.8 s. Small results exit before the core is loaded. Anything unexpected ends with the original output.
 - Stores full outputs and the log in `$CLAUDE_PLUGIN_DATA` (Claude Code's persistent plugin directory), or
-  `~/.claude/jev-lens` when that is not set. The key file is always `~/.claude/jev-lens/key.json`. Stored outputs older than 14 days are removed. `JEV_LENS_DATA_DIR`
+  `~/.claude/jev-lens` when that is not set. The key file is always `~/.claude/jev-lens/key.json`. Stored outputs older than `JEV_LENS_KEEP_DAYS` (90) days are removed. `JEV_LENS_DATA_DIR`
   overrides the location.
 
 ## Status line
@@ -101,6 +106,23 @@ in your checkout instead. Claude Code refreshes the status line when an assistan
 node start (about 0.05 s) per refresh. It looks for the log in `JEV_LENS_DATA_DIR`, every `~/.claude/plugins/data/jev-lens-*` directory
 and `~/.claude/jev-lens`, because the status line command runs without `CLAUDE_PLUGIN_DATA`.
 
+## Collecting data for the benchmark
+
+The stored outputs and the log are the raw material for scoring changes offline, the way the pi extension's
+defaults were tuned (see [Evaluation](https://github.com/dizk/jev-lens/tree/main/packages/pi-jev-lens#evaluation)).
+`src/trajectory.ts` turns Claude Code transcripts into trajectories the benchmark replays, putting every compressed
+result back to its full text from the store and keeping the view Claude saw in `details.view`:
+
+```sh
+node packages/claude-code/src/trajectory.ts ~/.claude/projects/-Users-me-repos-app > sessions.jsonl
+node --import tsx eval/bench/run.ts --file sessions.jsonl --from 0 --to 50
+```
+
+A directory is searched recursively and sub-agent transcripts become trajectories of their own. Run the export
+before the retention expires: stored outputs are kept for `JEV_LENS_KEEP_DAYS` (90) days, and Claude Code removes
+transcripts after its own `cleanupPeriodDays` (30). The benchmark scores a recall the same way as an edit of a
+dropped line: `recall-miss` is a recorded recall that the replayed view would still not have answered.
+
 ## Configuration
 
 The same `JEV_LENS_*` environment variables as the pi extension, read from the environment Claude Code runs in.
@@ -116,6 +138,7 @@ The ones that matter most:
 | `JEV_LENS_MODEL` | `jev-latest` | the jev model |
 | `JEV_LENS_KEY_FILE` | `~/.claude/jev-lens/key.json` | where the key file lives |
 | `JEV_LENS_HOOK_TIMEOUT_MS` | `30000` | the hook gives up and returns the original after this |
+| `JEV_LENS_KEEP_DAYS` | `90` | how long stored outputs are kept for the recall tool and the benchmark export |
 
 The full list is in the [pi extension's README](https://github.com/dizk/jev-lens/tree/main/packages/pi-jev-lens#configuration-environment).
 
@@ -128,7 +151,8 @@ hooks/hooks.json             PostToolUse on ^(Read|Bash|Grep)$ → node src/hook
 commands/stats.md            /jev-lens:stats
 src/hook.ts                  the hook: normalize the result, ask the core, print updatedToolOutput
 src/claude.ts                Claude Code's tool output shapes ↔ the core's canonical tools
-src/transcript.ts            task and agent text from the session transcript
+src/transcript.ts            task and agent text from the session transcript, main or sub-agent
+src/trajectory.ts            export transcripts as benchmark trajectories, full outputs restored
 src/store.ts                 outputs, log, key file, pruning
 src/mcp.ts                   a dependency-free MCP server over stdio
 src/statusline.ts            the status line segment: this session's totals from the log

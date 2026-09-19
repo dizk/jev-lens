@@ -11,6 +11,27 @@ export function dataDir(): string {
 	return process.env.JEV_LENS_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || join(homedir(), ".claude", "jev-lens");
 }
 
+/** How long stored outputs are kept: JEV_LENS_KEEP_DAYS, default 90. They are the raw material for replaying decisions offline. */
+export function keepDays(): number {
+	const n = Number(process.env.JEV_LENS_KEEP_DAYS);
+	return Number.isFinite(n) && n > 0 ? n : 90;
+}
+
+/**
+ * Every directory the plugin may have written to, for processes that Claude Code starts without
+ * CLAUDE_PLUGIN_DATA (the statusLine command, the trajectory export): the configured directory, the
+ * plugin data directory of every marketplace the plugin is installed from, and the fallback.
+ */
+export function candidateDataDirs(): string[] {
+	const dirs = new Set<string>([dataDir()]);
+	try {
+		const data = join(homedir(), ".claude", "plugins", "data");
+		if (existsSync(data)) for (const d of readdirSync(data)) if (d.startsWith("jev-lens-")) dirs.add(join(data, d));
+	} catch {}
+	dirs.add(join(homedir(), ".claude", "jev-lens"));
+	return [...dirs].filter((d) => existsSync(d));
+}
+
 /** The key file has a fixed, documented place, independent of where Claude Code puts plugin data. */
 export function keyFile(): string {
 	return join(homedir(), ".claude", "jev-lens", "key.json");
@@ -49,14 +70,20 @@ export function saveOutput(rec: StoredOutput): string {
 	return p;
 }
 
-export function loadOutput(id: string): StoredOutput | undefined {
+export function loadOutput(id: string, dir = dataDir()): StoredOutput | undefined {
 	try {
-		const p = join(outputsDir(), `${safeName(id)}.json`);
+		const p = join(dir, "outputs", `${safeName(id)}.json`);
 		if (!existsSync(p)) return undefined;
 		return JSON.parse(readFileSync(p, "utf8")) as StoredOutput;
 	} catch {
 		return undefined;
 	}
+}
+
+/** The stored output from whichever candidate directory has it. */
+export function loadOutputAnywhere(id: string): StoredOutput | undefined {
+	for (const d of candidateDataDirs()) { const hit = loadOutput(id, d); if (hit) return hit; }
+	return undefined;
 }
 
 export function appendLog(record: Record<string, unknown>): void {
@@ -75,19 +102,9 @@ export function readLog(file = logFile()): Record<string, unknown>[] {
 	}
 }
 
-/**
- * Every log file the plugin may have written, for processes that Claude Code starts without
- * CLAUDE_PLUGIN_DATA (the statusLine command): the configured directory, the fallback, and the
- * plugin data directory of every marketplace the plugin is installed from.
- */
+/** Every log file the plugin may have written, see candidateDataDirs. */
 export function candidateLogFiles(): string[] {
-	const files = new Set<string>([logFile()]);
-	try {
-		const data = join(homedir(), ".claude", "plugins", "data");
-		if (existsSync(data)) for (const d of readdirSync(data)) if (d.startsWith("jev-lens-")) files.add(join(data, d, "log.jsonl"));
-	} catch {}
-	files.add(join(homedir(), ".claude", "jev-lens", "log.jsonl"));
-	return [...files].filter((f) => existsSync(f));
+	return candidateDataDirs().map((d) => join(d, "log.jsonl")).filter((f) => existsSync(f));
 }
 
 /** The records of every candidate log, in time order. */
@@ -98,8 +115,8 @@ export function readAllLogs(): Record<string, unknown>[] {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** Drop stored outputs older than `maxAgeMs`, at most once an hour (a stamp file records the last sweep). */
-export function pruneOutputs(maxAgeMs = 14 * DAY, now = Date.now()): number {
+/** Drop stored outputs older than `maxAgeMs` (default JEV_LENS_KEEP_DAYS, 90), at most once an hour (a stamp file records the last sweep). */
+export function pruneOutputs(maxAgeMs = keepDays() * DAY, now = Date.now()): number {
 	try {
 		const dir = outputsDir();
 		if (!existsSync(dir)) return 0;

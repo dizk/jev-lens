@@ -13,6 +13,8 @@ import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "
 export interface ScoreRow {
 	session: string; tool: string; args: string; kind: string; tokens: number; view: string; viewTokens: number; chosen: string;
 	needsFull: number; pFull: number; confidence: number; editMiss: boolean; quoteMiss: boolean; refMiss: boolean; refMissId?: string; editsChecked: number; ms: number;
+	/** The agent recalled this result in a recorded session and the replayed view still lacks what it asked for. */
+	recallMiss: boolean;
 	/** Per-block probabilities from the expansion step, when it ran. */
 	expandProbs?: number[];
 }
@@ -34,6 +36,29 @@ function omittedText(full: string, view: View): string {
 	if (view.kind === "full") return "";
 	const inc = new Set(view.included);
 	return full.split("\n").filter((_, i) => !inc.has(i + 1)).join("\n");
+}
+/**
+ * recall-miss: only real sessions with the extension record recalls. A whole-output recall misses unless
+ * the replayed view is full; a line range misses when the view lacks one of its lines; a pattern misses
+ * when it matches an omitted line. The recall tool's pattern is a plain case-insensitive substring, or /re/flags.
+ */
+export function recallMisses(view: View, full: string, args: { lines?: unknown; pattern?: unknown }): boolean {
+	if (view.kind === "full") return false;
+	const included = new Set(view.included);
+	const lines = full.split("\n");
+	if (typeof args.lines === "string") {
+		const m = args.lines.match(/^(\d+)\s*-\s*(\d+)$/);
+		if (!m) return true;
+		for (let i = Number(m[1]); i <= Math.min(Number(m[2]), lines.length); i++) if (!included.has(i)) return true;
+		return false;
+	}
+	if (typeof args.pattern === "string" && args.pattern) {
+		const rx = args.pattern.match(/^\/(.*)\/([a-z]*)$/);
+		let test: (l: string) => boolean;
+		try { const re = rx ? new RegExp(rx[1], rx[2].includes("i") ? rx[2] : rx[2] + "i") : undefined; const needle = args.pattern.toLowerCase(); test = re ? (l) => re.test(l) : (l) => l.toLowerCase().includes(needle); } catch { return true; }
+		return lines.some((l, i) => !included.has(i + 1) && test(l));
+	}
+	return true;
 }
 function spans(text: string, n = 40): string[] {
 	const out: string[] = [];
@@ -82,7 +107,7 @@ export async function scoreMessages(
 		const matchesPath = (p: unknown) => typeof p === "string" && paths.some((path) =>
 			normalize(p) === normalize(path) || (m.toolName === "bash" && matchesGlob(normalize(p), normalize(path))));
 		const rereadPaths = new Set<string>();
-		let editMiss = false, quoteMiss = false, editsChecked = 0, refMiss = false;
+		let editMiss = false, quoteMiss = false, editsChecked = 0, refMiss = false, recallMiss = false;
 		const omitted = omittedText(text, view);
 		// ref-miss: the agent's next two steps use an identifier that exists only in the omitted part
 		// (not in the view, the task, its own earlier reasoning or the tool call), i.e. it learned it from what we dropped.
@@ -107,7 +132,7 @@ export async function scoreMessages(
 					const readPath = (c.arguments as { path?: string })?.path;
 					if (readPath && matchesPath(readPath)) rereadPaths.add(normalize(readPath));
 				}
-				if (c.type === "toolCall" && c.name === "recall" && (c.arguments as { id?: string })?.id === m.toolCallId) reread = true;
+				if (c.type === "toolCall" && c.name === "recall" && (c.arguments as { id?: string })?.id === m.toolCallId) { reread = true; if (recallMisses(view, text, c.arguments as { lines?: unknown; pattern?: unknown })) recallMiss = true; }
 			}
 			for (const c of n.content) {
 				if (c.type !== "toolCall" || c.name !== "edit" || reread) continue;
@@ -123,7 +148,7 @@ export async function scoreMessages(
 		}
 		// after scoring, the agent has seen the view (not the omitted part)
 		learn(view.text);
-		const row: ScoreRow = { session, tool: m.toolName, refMissId, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, editsChecked, ms: Date.now() - t0, expandProbs };
+		const row: ScoreRow = { session, tool: m.toolName, refMissId, args: JSON.stringify(args ?? {}).slice(0, 80), kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, pFull: answer.probabilities.full ?? 0, confidence: answer.confidence, editMiss, quoteMiss, refMiss, recallMiss, editsChecked, ms: Date.now() - t0, expandProbs };
 		rows.push(row);
 		onRow?.(row);
 	}
@@ -133,15 +158,16 @@ export async function scoreMessages(
 export interface Summary {
 	results: number; compressed: number; tokens: number; sent: number; savedPct: number;
 	editable: number; editMiss: number; editMissPct: number; quoteMiss: number; quoteMissPct: number; refMiss: number; refMissPct: number;
+	recallMiss: number; recallMissPct: number;
 	views: Record<string, number>; byKind: Record<string, { n: number; savedPct: number; editMissPct: number; refMissPct: number }>;
-	/** Objective for autoresearch: saved% minus 5× edit-miss% minus 2× quote-miss% minus 1× ref-miss% (percentage points). */
+	/** Objective for autoresearch: saved% minus 5× edit-miss% minus 2× quote-miss% minus 1× ref-miss% minus 2× recall-miss% (percentage points). */
 	objective: number; meanMs: number;
 }
 
 export function summarize(rows: ScoreRow[]): Summary {
 	const tokens = rows.reduce((a, r) => a + r.tokens, 0), sent = rows.reduce((a, r) => a + r.viewTokens, 0);
 	const editable = rows.filter((r) => r.editsChecked > 0);
-	const editMiss = rows.filter((r) => r.editMiss).length, quoteMiss = rows.filter((r) => r.quoteMiss).length, refMiss = rows.filter((r) => r.refMiss).length;
+	const editMiss = rows.filter((r) => r.editMiss).length, quoteMiss = rows.filter((r) => r.quoteMiss).length, refMiss = rows.filter((r) => r.refMiss).length, recallMiss = rows.filter((r) => r.recallMiss).length;
 	const views: Record<string, number> = {};
 	for (const r of rows) views[r.view] = (views[r.view] ?? 0) + 1;
 	const byKind: Summary["byKind"] = {};
@@ -155,14 +181,15 @@ export function summarize(rows: ScoreRow[]): Summary {
 	const editMissPct = editable.length ? (100 * editMiss) / editable.length : 0;
 	const quoteMissPct = rows.length ? (100 * quoteMiss) / rows.length : 0;
 	const refMissPct = rows.length ? (100 * refMiss) / rows.length : 0;
-	return { results: rows.length, compressed: rows.filter((r) => r.view !== "full").length, tokens, sent, savedPct, editable: editable.length, editMiss, editMissPct, quoteMiss, quoteMissPct, refMiss, refMissPct, views, byKind, objective: savedPct - 5 * editMissPct - 2 * quoteMissPct - refMissPct, meanMs: rows.length ? rows.reduce((a, r) => a + r.ms, 0) / rows.length : 0 };
+	const recallMissPct = rows.length ? (100 * recallMiss) / rows.length : 0;
+	return { results: rows.length, compressed: rows.filter((r) => r.view !== "full").length, tokens, sent, savedPct, editable: editable.length, editMiss, editMissPct, quoteMiss, quoteMissPct, refMiss, refMissPct, recallMiss, recallMissPct, views, byKind, objective: savedPct - 5 * editMissPct - 2 * quoteMissPct - refMissPct - 2 * recallMissPct, meanMs: rows.length ? rows.reduce((a, r) => a + r.ms, 0) / rows.length : 0 };
 }
 
 export function renderSummary(s: Summary): string {
 	return [
-		"| large results | compressed | tokens | sent | saved | edit-miss (of edited) | quote-miss | ref-miss | objective | views | mean ms |",
-		"|---|---|---|---|---|---|---|---|---|---|---|",
-		`| ${s.results} | ${s.compressed} | ${(s.tokens / 1000).toFixed(1)}k | ${(s.sent / 1000).toFixed(1)}k | ${s.savedPct.toFixed(1)}% | ${s.editMiss}/${s.editable} (${s.editMissPct.toFixed(1)}%) | ${s.quoteMiss} (${s.quoteMissPct.toFixed(1)}%) | ${s.refMiss} (${s.refMissPct.toFixed(1)}%) | ${s.objective.toFixed(1)} | ${Object.entries(s.views).map(([k, v]) => `${k}:${v}`).join(", ")} | ${Math.round(s.meanMs)} |`,
+		"| large results | compressed | tokens | sent | saved | edit-miss (of edited) | quote-miss | ref-miss | recall-miss | objective | views | mean ms |",
+		"|---|---|---|---|---|---|---|---|---|---|---|---|",
+		`| ${s.results} | ${s.compressed} | ${(s.tokens / 1000).toFixed(1)}k | ${(s.sent / 1000).toFixed(1)}k | ${s.savedPct.toFixed(1)}% | ${s.editMiss}/${s.editable} (${s.editMissPct.toFixed(1)}%) | ${s.quoteMiss} (${s.quoteMissPct.toFixed(1)}%) | ${s.refMiss} (${s.refMissPct.toFixed(1)}%) | ${s.recallMiss} (${s.recallMissPct.toFixed(1)}%) | ${s.objective.toFixed(1)} | ${Object.entries(s.views).map(([k, v]) => `${k}:${v}`).join(", ")} | ${Math.round(s.meanMs)} |`,
 		"",
 		"| kind | n | saved | edit-miss | ref-miss |",
 		"|---|---|---|---|---|",

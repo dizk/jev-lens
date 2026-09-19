@@ -7,7 +7,7 @@ export default defineConfig({
 		alias: { "jev-lens": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)) },
 	},
 	test: {
-		include: ["packages/*/test/**/*.test.ts"],
-		exclude: ["eval/**", "node_modules/**"],
+		include: ["packages/*/test/**/*.test.ts", "eval/test/**/*.test.ts"],
+		exclude: ["eval/runs/**", "eval/tasks/**", "eval/fixture/**", "eval/bench/**", "node_modules/**"],
 	},
 });

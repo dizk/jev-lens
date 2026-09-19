@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Claude Code plugin: stored outputs are kept for 90 days (`JEV_LENS_KEEP_DAYS`), up from 14, so sessions can be
+  replayed offline. `src/trajectory.ts` exports transcripts as benchmark trajectories with the full outputs restored
+  from the store; sub-agent transcripts are exported too.
+- Claude Code plugin: the text before the call now comes from the message that holds the call, then the same turn,
+  then an earlier turn, and the log says which. A sub-agent's call is looked up in its own transcript file; before,
+  sub-agent calls got the main conversation's context.
+- Benchmark: `recall-miss`, a recorded recall that the replayed view would not have answered, joins the metrics and
+  the objective (weight 2).
 - Claude Code plugin: `stats` reports how many compressed results Claude recalled, the number to watch while testing
   whether the views hide what the task needed. Recall log records now carry the session of the stored output.
 

@@ -29,13 +29,13 @@ async function main(): Promise<void> {
 	if (!cfg.enabled || !cfg.presend) return;
 	const { presend, mock } = core.createPresend(cfg, core.promptsWithVariant(variant));
 	const lens = new core.Lens({ cfg, presend, viewParams: variant.views ?? {}, footer: { recall: recallHint, note: norm.toolName === "read" ? READ_NOTE : undefined } });
-	const context = contextFromTranscript(input.transcript_path);
+	const context = contextFromTranscript(input.transcript_path, input.tool_use_id);
 	const started = Date.now();
 	const id = input.tool_use_id;
 	try {
 		const out = await lens.compress({ toolCallId: id, toolName: norm.toolName, args: norm.args, text: norm.text, context });
 		const answer = out.answer;
-		appendLog({ event: "presend", session: input.session_id, cwd: input.cwd, id, tool: input.tool_name, kind: out.kind, tokens: out.tokens, view: out.view?.kind ?? "full", sentTokens: out.sentTokens, reason: out.reason, chosen: answer?.choice, needsFull: answer?.needsFull, p: answer?.probabilities, confidence: answer?.confidence, expanded: out.expanded, candidates: out.candidates, mock, ms: out.ms, agentText: context.agentText.length > 0 });
+		appendLog({ event: "presend", session: input.session_id, cwd: input.cwd, id, tool: input.tool_name, kind: out.kind, tokens: out.tokens, view: out.view?.kind ?? "full", sentTokens: out.sentTokens, reason: out.reason, chosen: answer?.choice, needsFull: answer?.needsFull, p: answer?.probabilities, confidence: answer?.confidence, expanded: out.expanded, candidates: out.candidates, mock, ms: out.ms, agentText: context.agentText.length > 0, agentTextSource: context.source, transcriptHasCall: context.found });
 		if (!out.compressed || !out.view) return;
 		saveOutput({ id, toolName: norm.toolName, args: norm.args, text: norm.text, view: out.view.kind, kind: out.kind ?? "?", sessionId: input.session_id ?? "", cwd: input.cwd ?? "", at: Date.now() });
 		pruneOutputs();
