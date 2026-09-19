@@ -3,12 +3,12 @@
  * result, build views, let the classifier choose, and compare with what the agent did next.
  */
 import { matchesGlob, posix } from "node:path";
-import { displayedFiles } from "../src/shell-display.ts";
-import type { Config } from "../src/config.ts";
-import { buildPresendState, decideView, expandRelevantBlocks, type PresendClassifier } from "../src/presend.ts";
-import type { AgentMessage } from "../src/pi-types.ts";
-import { contentText, estimateTokensOfText } from "../src/text.ts";
-import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "../src/views.ts";
+import { displayedFiles } from "jev-lens";
+import type { Config } from "jev-lens";
+import { buildPresendState, decideView, expandRelevantBlocks, type PresendClassifier } from "jev-lens";
+import type { AgentMessage } from "../packages/pi/src/pi-types.ts";
+import { contentText, estimateTokensOfText } from "jev-lens";
+import { buildCandidatesAsync, extractTerms, type View, type ViewParams } from "jev-lens";
 
 export interface ScoreRow {
 	session: string; tool: string; args: string; kind: string; tokens: number; view: string; viewTokens: number; chosen: string;

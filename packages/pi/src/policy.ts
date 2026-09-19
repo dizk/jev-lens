@@ -1,7 +1,7 @@
 import type { AgentMessage, ToolResultMessage } from "./pi-types.ts";
-import type { Config } from "./config.ts";
-import type { Bucket, Decision } from "./types.ts";
-import { contentText, estimateTokensOfText } from "./text.ts";
+import type { Config } from "jev-lens";
+import type { Bucket, Decision } from "jev-lens";
+import { contentText, estimateTokensOfText } from "jev-lens";
 
 export const STUB_PREFIX = "[jev-lens pruned:";
 

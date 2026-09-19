@@ -14,9 +14,9 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { loadConfig } from "../src/config.ts";
-import { JevPresend, MockPresend, type PresendClassifier } from "../src/presend.ts";
-import type { AgentMessage } from "../src/pi-types.ts";
+import { loadConfig } from "jev-lens";
+import { JevPresend, MockPresend, type PresendClassifier } from "jev-lens";
+import type { AgentMessage } from "../packages/pi/src/pi-types.ts";
 import { renderSummary, scoreMessages, summarize, type ScoreRow } from "./presend-score.ts";
 
 function listSessions(paths: string[]): string[] {

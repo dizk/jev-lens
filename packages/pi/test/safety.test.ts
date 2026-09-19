@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import extension from "../index.ts";
-import { JevClassifier, MockClassifier } from "../src/classifier.ts";
-import { loadConfig } from "../src/config.ts";
-import { MockPresend } from "../src/presend.ts";
+import { JevClassifier, MockClassifier } from "jev-lens";
+import { loadConfig } from "jev-lens";
+import { MockPresend } from "jev-lens";
 import { transformToolResult } from "../src/policy.ts";
-import { buildCandidates, displayedFiles, kindOfFiles, relevantView } from "../src/views.ts";
-import { scoreMessages } from "../eval/presend-score.ts";
+import { buildCandidates, displayedFiles, kindOfFiles, relevantView } from "jev-lens";
+import { scoreMessages } from "../../../eval/presend-score.ts";
 
 const dirs: string[] = [];
 const temp = () => { const dir = mkdtempSync(join(tmpdir(), "jev-safety-")); dirs.push(dir); return dir; };
@@ -65,7 +65,7 @@ describe("content safety", () => {
 });
 
 describe("visible failures", () => {
-	const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+	const code = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 	const event = { toolName: "read", toolCallId: "r", input: { path: "a.js" }, content: [{ type: "text", text: code }], isError: false };
 	function ui(h: ReturnType<typeof harness>) {
 		return { ...h.ctx, hasUI: true, ui: { notify: vi.fn(), setStatus: vi.fn() } };
@@ -175,7 +175,7 @@ describe("asynchronous session isolation", () => {
 		const d = deferred<any>();
 		const choose = vi.spyOn(MockPresend.prototype, "choose").mockReturnValue(d.promise);
 		const h = harness(); await h.emit("session_start");
-		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const code = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 		const work = h.emit("tool_result", { toolName: "read", toolCallId: "old", input: { path: "a.js" }, content: [{ type: "text", text: code }], isError: false });
 		await vi.waitFor(() => expect(choose).toHaveBeenCalled());
 		await h.emit("session_start");

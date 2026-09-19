@@ -414,9 +414,17 @@ export function buildCandidates(toolName: string, args: unknown, text: string, t
 	return { kind, views: cands };
 }
 
-export function footer(view: View, toolCallId: string, total: number): string {
+export interface FooterOptions {
+	/** How the host names the recall tool in the note (default: pi's `recall(id: "...")` phrasing). */
+	recall?: (toolCallId: string) => string;
+	/** An extra sentence, for hosts that add their own line numbers in front of the view's. */
+	note?: string;
+}
+
+export function footer(view: View, toolCallId: string, total: number, opts: FooterOptions = {}): string {
 	if (view.kind === "full") return "";
-	return `\n\n[jev-lens: showing the "${view.kind}" view, ${view.lines} of ${total} lines. Omitted lines are marked ⋯. Call recall(id: "${toolCallId}") for the full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.]`;
+	const recall = opts.recall ? opts.recall(toolCallId) : `Call recall(id: "${toolCallId}") for the full output, or recall(id, lines: "a-b") / recall(id, pattern: "...") for a slice.`;
+	return `\n\n[jev-lens: showing the "${view.kind}" view, ${view.lines} of ${total} lines. Omitted lines are marked ⋯. ${recall}${opts.note ? ` ${opts.note}` : ""}]`;
 }
 
 export interface Block {

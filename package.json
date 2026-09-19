@@ -1,67 +1,36 @@
 {
-  "name": "pi-jev-lens",
-  "version": "0.4.1",
-  "description": "pi extension that compresses large tool results before they reach the model: jev picks the view (outline, relevant blocks, sections, signals, testlog), full text stays recallable",
+  "name": "jev-lens-monorepo",
+  "private": true,
+  "version": "0.5.0",
+  "description": "jev picks what the model gets to see of large tool results. Core library, pi extension and Claude Code plugin.",
   "author": "Didrik Rognstad",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dizk/pi-jev-lens.git"
-  },
-  "homepage": "https://github.com/dizk/pi-jev-lens#readme",
-  "bugs": {
-    "url": "https://github.com/dizk/pi-jev-lens/issues"
-  },
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "typesafe",
-    "jev",
-    "context",
-    "compression",
-    "prompt-cache",
-    "tool-output"
-  ],
   "type": "module",
-  "main": "index.ts",
-  "engines": {
-    "node": ">=22"
-  },
-  "files": [
-    "index.ts",
-    "src/",
-    "README.md",
-    "LICENSE",
-    "STATUS.md"
+  "workspaces": [
+    "packages/core",
+    "packages/pi",
+    "packages/claude-code"
   ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
+    "build": "npm run build --workspace jev-lens",
+    "prepare": "npm run build",
+    "pretest": "npm run build",
     "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json && tsc -p packages/claude-code/tsconfig.json",
     "replay": "node --import tsx eval/replay.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "pi": {
-    "extensions": [
-      "./index.ts"
-    ]
-  },
-  "dependencies": {
-    "@binclusive/tree-sitter-kotlin-wasm": "^0.1.0",
-    "@typesafe-ai/sdk": "^0.6.0",
-    "@vscode/tree-sitter-wasm": "^0.3.1",
-    "web-tree-sitter": "^0.27.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.3",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
+    "presend-replay": "node --import tsx eval/presend-replay.ts",
+    "bench": "node --import tsx eval/bench/run.ts"
   },
   "devDependencies": {
-    "@types/node": "^26.6.1",
-    "tsx": "^4.23.13",
-    "typescript": "^7.0.2",
-    "vitest": "^5.0.1",
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@earendil-works/pi-tui": "^0.84.3",
-    "typebox": "^1.3.33"
+    "@types/node": "^26.6.1",
+    "tsx": "^4.23.13",
+    "typebox": "^1.3.33",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   }
 }

@@ -70,15 +70,18 @@ export interface Config {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** Where `/jev-lens key` stores the TypeSafe API key (overridable for tests). */
-export function keyFilePath(): string {
-	return process.env.JEV_LENS_KEY_FILE || join(homedir(), ".pi", "agent", "jev-lens.json");
+/** Where the pi extension stores the TypeSafe API key. Other hosts pass their own default. */
+export const PI_KEY_FILE = join(homedir(), ".pi", "agent", "jev-lens.json");
+
+/** Where the stored TypeSafe API key lives: JEV_LENS_KEY_FILE, else the host's default (pi's when none is given). */
+export function keyFilePath(defaultPath: string = PI_KEY_FILE): string {
+	return process.env.JEV_LENS_KEY_FILE || defaultPath;
 }
 
 /** The stored key, if any. */
-export function readStoredKey(): string | undefined {
+export function readStoredKey(defaultPath?: string): string | undefined {
 	try {
-		const p = keyFilePath();
+		const p = keyFilePath(defaultPath);
 		if (!existsSync(p)) return undefined;
 		const key = (JSON.parse(readFileSync(p, "utf8")) as { apiKey?: unknown }).apiKey;
 		return typeof key === "string" && key.trim() ? key.trim() : undefined;
@@ -87,22 +90,28 @@ export function readStoredKey(): string | undefined {
 	}
 }
 
-/** Store the key in the user's pi directory, readable only by the user. */
-export function storeKey(key: string): string {
-	const p = keyFilePath();
+/** Store the key in the host's key file, readable only by the user. */
+export function storeKey(key: string, defaultPath?: string): string {
+	const p = keyFilePath(defaultPath);
 	mkdirSync(dirname(p), { recursive: true });
 	writeFileSync(p, `${JSON.stringify({ apiKey: key.trim() }, null, 2)}\n`, { mode: 0o600 });
 	return p;
 }
 
 /** Key resolution: environment (or the package's .env, loaded into it), then the stored key. */
-export function resolveApiKey(): string | undefined {
-	return process.env.TYPESAFE_API_KEY || readStoredKey();
+export function resolveApiKey(defaultPath?: string): string | undefined {
+	return process.env.TYPESAFE_API_KEY || readStoredKey(defaultPath);
 }
 
-/** Load KEY=VALUE lines from the extension's own .env (never from the target project). */
+/**
+ * Load KEY=VALUE lines from this package's own .env, and from the monorepo root when running from a
+ * source checkout. Never from the target project: an installed copy under node_modules reads only its own directory.
+ */
 export function loadDotEnv(): void {
-	for (const dir of [join(HERE, ".."), HERE]) {
+	const pkgRoot = join(HERE, "..");
+	const dirs = [pkgRoot];
+	if (!HERE.includes("node_modules")) dirs.push(join(pkgRoot, "..", ".."));
+	for (const dir of dirs) {
 		const p = join(dir, ".env");
 		if (!existsSync(p)) continue;
 		for (const line of readFileSync(p, "utf8").split("\n")) {
@@ -120,7 +129,12 @@ function num(name: string, fallback: number): number {
 	return Number.isFinite(n) ? n : fallback;
 }
 
-export function loadConfig(): Config {
+export interface ConfigOptions {
+	/** The host's default key file (JEV_LENS_KEY_FILE still wins). */
+	keyFile?: string;
+}
+
+export function loadConfig(opts: ConfigOptions = {}): Config {
 	loadDotEnv();
 	const envMode = process.env.JEV_LENS_MODE;
 	const mode: SealMode = envMode === "batch" || envMode === "budget" || envMode === "rolling" ? envMode : "off";
@@ -155,7 +169,7 @@ export function loadConfig(): Config {
 		variantFile: process.env.JEV_LENS_VARIANT || undefined,
 		forceMock: process.env.JEV_LENS_CLASSIFIER === "mock",
 		logFile: process.env.JEV_LENS_LOG !== "0",
-		apiKey: resolveApiKey(),
+		apiKey: resolveApiKey(opts.keyFile),
 	};
 }
 
@@ -178,8 +192,8 @@ export function loadVariant(path: string | undefined): VariantOverrides {
 }
 
 /** Config with a variant's config overrides applied. */
-export function loadConfigWithVariant(): { cfg: Config; variant: VariantOverrides } {
-	const base = loadConfig();
+export function loadConfigWithVariant(opts: ConfigOptions = {}): { cfg: Config; variant: VariantOverrides } {
+	const base = loadConfig(opts);
 	const variant = loadVariant(base.variantFile);
 	return { cfg: { ...base, ...(variant.config ?? {}) }, variant };
 }

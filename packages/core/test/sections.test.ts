@@ -92,7 +92,7 @@ describe("command sections policy and expansion", () => {
 });
 
 describe("edit results and outline without blocks", () => {
-	const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+	const code = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 	it("never reduces the agent's own edit or write results", () => {
 		expect(buildCandidates("edit", { path: "src/categories.js" }, code, []).views.map((v) => v.kind)).toEqual(["full"]);
 		expect(buildCandidates("write", { path: "src/categories.js" }, code, []).views.map((v) => v.kind)).toEqual(["full"]);

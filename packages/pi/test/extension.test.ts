@@ -133,7 +133,7 @@ describe("pre-send compression and recall (mock)", () => {
 		const ctx = ctxFor(cwd, entries);
 		await emit("session_start", { reason: "startup" }, ctx);
 		const { readFileSync } = await import("node:fs");
-		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const code = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 		const r = await emit("tool_result", { toolName: "read", toolCallId: "c7", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], details: undefined, isError: false }, ctx);
 		expect(r).toBeDefined();
 		const sent = r.content[0].text as string;
@@ -176,7 +176,7 @@ describe("TUI integration", () => {
 		const ctx = ctxFor(mkdtempSync(join(tmpdir(), "jevext-")), entries);
 		await emit("session_start", { reason: "startup" }, ctx);
 		const { readFileSync } = await import("node:fs");
-		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const code = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 		const r = await emit("tool_result", { toolName: "read", toolCallId: "c9", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], details: undefined, isError: false }, ctx);
 		expect(r.details.jevLens.included.length).toBeGreaterThan(3);
 		const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };
@@ -240,7 +240,7 @@ describe("status line", () => {
 		const statuses: string[] = [];
 		const ctx = { ...ctxFor(cwd, entries), hasUI: true, ui: { notify() {}, setStatus: (_k: string, t: string) => statuses.push(t) } };
 		await emit("session_start", {}, ctx);
-		const code = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+		const code = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 		const reduced = await emit("tool_result", { toolName: "read", toolCallId: "r1", input: { path: "src/categories.js" }, content: [{ type: "text", text: code }], isError: false }, ctx);
 		expect(reduced?.content?.[0]?.text.length).toBeLessThan(code.length);
 		expect(statuses.at(-1)).toMatch(/^jev-lens\(mock\) \(presend −\d/); // no usage yet: no percentage

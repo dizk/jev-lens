@@ -1,4 +1,8 @@
-import type { AgentMessage } from "./pi-types.ts";
+/** The shape of a message this module reads: pi's AgentMessage and Claude Code transcript messages both fit. */
+export interface MessageLike {
+	role: string;
+	content: unknown;
+}
 
 export function contentText(content: unknown): string {
 	if (typeof content === "string") return content;
@@ -12,11 +16,11 @@ export function contentText(content: unknown): string {
 	return parts.join("\n");
 }
 
-export function toolCallsOf(message: AgentMessage): { name: string; arguments: unknown }[] {
-	if (message.role !== "assistant") return [];
+export function toolCallsOf(message: MessageLike): { name: string; arguments: unknown }[] {
+	if (message.role !== "assistant" || !Array.isArray(message.content)) return [];
 	const out: { name: string; arguments: unknown }[] = [];
-	for (const block of message.content) {
-		if (block.type === "toolCall") out.push({ name: block.name, arguments: block.arguments });
+	for (const block of message.content as { type?: string; name?: string; arguments?: unknown }[]) {
+		if (block && block.type === "toolCall" && typeof block.name === "string") out.push({ name: block.name, arguments: block.arguments });
 	}
 	return out;
 }

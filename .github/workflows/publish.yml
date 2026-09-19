@@ -35,23 +35,21 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
-          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
-          if (process.env.RELEASE_TAG !== `v${pkg.version}`) {
-            throw new Error('Release tag must match package.json: v' + pkg.version);
+          const tag = process.env.RELEASE_TAG;
+          for (const dir of ['packages/core', 'packages/pi']) {
+            const pkg = JSON.parse(readFileSync(`${dir}/package.json`, 'utf8'));
+            if (tag !== `v${pkg.version}`) throw new Error(`Release tag ${tag} must match ${dir}/package.json: v${pkg.version}`);
+            if (pkg.version.includes('-')) throw new Error('This workflow publishes stable releases only');
           }
-          if (lock.version !== pkg.version || lock.packages[''].version !== pkg.version) {
-            throw new Error('package-lock.json version must match package.json');
-          }
-          if (process.env.RELEASE_PRERELEASE === 'true' || pkg.version.includes('-')) {
-            throw new Error('This workflow publishes stable releases only');
-          }
+          if (process.env.RELEASE_PRERELEASE === 'true') throw new Error('This workflow publishes stable releases only');
           NODE
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
         env:
           JEV_LENS_CLASSIFIER: mock
-      - run: npm pack --dry-run
-      - name: Publish with npm Trusted Publishing
-        run: npm publish --provenance --access public
+      - run: npm pack --dry-run --workspace jev-lens --workspace pi-jev-lens
+      - name: Publish jev-lens (core) with npm Trusted Publishing
+        run: npm publish --workspace jev-lens --provenance --access public
+      - name: Publish pi-jev-lens with npm Trusted Publishing
+        run: npm publish --workspace pi-jev-lens --provenance --access public

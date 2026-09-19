@@ -8,10 +8,10 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { loadConfig, type Config } from "../../src/config.ts";
-import { DEFAULT_PROMPTS, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "../../src/presend.ts";
-import type { AgentMessage } from "../../src/pi-types.ts";
-import type { ViewParams } from "../../src/views.ts";
+import { loadConfig, type Config } from "jev-lens";
+import { DEFAULT_PROMPTS, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "jev-lens";
+import type { AgentMessage } from "../../packages/pi/src/pi-types.ts";
+import type { ViewParams } from "jev-lens";
 import { renderSummary, scoreMessages, summarize, type ScoreRow } from "../presend-score.ts";
 
 export interface Variant { name?: string; config?: Partial<Config>; prompts?: Partial<PromptVariant>; views?: Partial<ViewParams> }

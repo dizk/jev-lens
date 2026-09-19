@@ -66,7 +66,7 @@ async function runOne(task: (typeof TASKS)[number], n: number, args: Args): Prom
 	mkdirSync(sessions, { recursive: true });
 	cpSync(FIXTURE, work, { recursive: true });
 	const piArgs = ["--mode", "json", "--model", args.model, "--thinking", "low", "--session-dir", sessions, "--no-approve"];
-	if (args.cond.startsWith("jev")) piArgs.unshift("-e", join(ROOT, "index.ts"));
+	if (args.cond.startsWith("jev")) piArgs.unshift("-e", join(ROOT, "packages", "pi", "index.ts"));
 	piArgs.push(task.prompt);
 	const t0 = Date.now();
 	const r = await sh("pi", piArgs, { cwd: work, timeoutMs: args.timeoutMs, stdout: join(dir, "events.jsonl"), env: { JEV_LENS_MODE: args.mode, JEV_LENS_PRESEND: args.cond.includes("presend") ? "1" : "0", ...(args.variant ? { JEV_LENS_VARIANT: args.variant } : {}) } });

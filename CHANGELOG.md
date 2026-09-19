@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 (2026-09-19)
+
+The repository is now `dizk/jev-lens`, a monorepo with three packages that share one core. Compression rules,
+views, thresholds and the model input are unchanged.
+
+- `jev-lens` (new, npm): the host-independent core. Candidate views, tree-sitter outlines, the jev questions and
+  decision rule, block and section expansion, and the recall slicing, behind a small `Lens` class.
+- `pi-jev-lens` (npm): the pi extension, now a thin host over `jev-lens`. Same commands, footer, UI and settings.
+  Install stays `pi install npm:pi-jev-lens`.
+- Claude Code plugin (new, `packages/claude-code`): a PostToolUse hook replaces large Read, Bash and Grep results
+  with the view jev picks, in the tool's own output shape; a bundled MCP server serves `recall` and `stats`.
+  Install with `/plugin marketplace add dizk/jev-lens` and `/plugin install jev-lens@jev-lens`. Not yet measured
+  on Claude Code sessions.
+- The key file path is a host choice: pi keeps `~/.pi/agent/jev-lens.json`, the Claude Code plugin uses
+  `~/.claude/jev-lens/key.json` or its plugin data directory. `JEV_LENS_KEY_FILE` still overrides both.
+- The `.env` the core reads for development is the repository root's (or the package's own), never the target
+  project's.
+
+
 ## 0.4.1 (2026-09-19)
 
 - Compression warnings and statistics now show the HTTP status when available.

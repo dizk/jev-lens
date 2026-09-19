@@ -18,18 +18,15 @@ import { Type } from "typebox";
 import { createBashToolDefinition, createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { ComparisonResult, comparisonHint, listLines, savingsLine, type CompressedRecord } from "./src/ui.ts";
-import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { buildItemState, JevClassifier, MockClassifier, type Classifier } from "./src/classifier.ts";
-import { buildPresendState, decideView, DEFAULT_PROMPTS, expandRelevantBlocks, JevPresend, MockPresend, type PresendClassifier, type PromptVariant } from "./src/presend.ts";
-import { buildCandidatesAsync, extractTerms, footer } from "./src/views.ts";
-import { keyFilePath, loadConfigWithVariant, storeKey, type Config } from "./src/config.ts";
-import { Health } from "./src/health.ts";
+import {
+	buildItemState, contentText, createPresend, describeToolCall, estimateTokensOfText, Health, JevClassifier, keyFilePath,
+	Lens, loadConfigWithVariant, MockClassifier, promptsWithVariant, RECALL_DESCRIPTION, RECALL_PARAM_DESCRIPTIONS, recallMissText, sliceRecall, storeKey, toolCallsOf,
+	type CallStats, type Classifier, type Decision,
+} from "jev-lens";
 import { SecretInput } from "./src/secret-input.ts";
 import { commandCompletions, commandHelp } from "./src/commands.ts";
 import { ENTRY_TYPE, rebuildLedger } from "./src/ledger.ts";
 import { applyLedger, decideBucket, pendingPrunable, shouldApplyPending } from "./src/policy.ts";
-import { contentText, describeToolCall, estimateTokensOfText, toolCallsOf, truncate } from "./src/text.ts";
-import type { CallStats, Decision } from "./src/types.ts";
 
 interface PendingResult {
 	message: AgentMessage & { role: "toolResult" };
@@ -38,18 +35,18 @@ interface PendingResult {
 
 export default function (pi: ExtensionAPI) {
 	const { cfg, variant } = loadConfigWithVariant();
-	const prompts: PromptVariant = { ...DEFAULT_PROMPTS, ...((variant.prompts ?? {}) as Partial<PromptVariant>), viewDescriptions: { ...DEFAULT_PROMPTS.viewDescriptions, ...(((variant.prompts ?? {}) as Partial<PromptVariant>).viewDescriptions ?? {}) } };
+	const prompts = promptsWithVariant(variant);
 	const viewParams = variant.views ?? {};
 	let keySource = process.env.TYPESAFE_API_KEY === cfg.apiKey && cfg.apiKey ? "env" : cfg.apiKey ? keyFilePath() : "none";
-	let usingMock = cfg.forceMock || !cfg.apiKey;
+	let { presend, mock: usingMock } = createPresend(cfg, prompts);
 	let classifier: Classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
-	let presend: PresendClassifier = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey: cfg.apiKey }), cfg.model, prompts);
+	let lens = new Lens({ cfg, presend, viewParams });
 	/** Switch from the mock to jev once a key is available (from `/jev-lens key`), without a restart. */
 	const useKey = (apiKey: string) => {
 		cfg.apiKey = apiKey;
-		usingMock = cfg.forceMock;
+		({ presend, mock: usingMock } = createPresend(cfg, prompts));
 		classifier = usingMock ? new MockClassifier() : new JevClassifier(cfg);
-		presend = usingMock ? new MockPresend() : new JevPresend(new TypeSafeClient({ apiKey }), cfg.model, prompts);
+		lens = new Lens({ cfg, presend, viewParams });
 	};
 	/** Full text of compressed tool results, by toolCallId, for the recall tool (also persisted in result details). */
 	const fullOutputs = new Map<string, { text: string; toolName: string; args: unknown; view: string }>();
@@ -365,38 +362,25 @@ export default function (pi: ExtensionAPI) {
 		if (tokens < cfg.presendMinTokens) return;
 		if (event.content.some((c) => c.type === "image")) return;
 		presendTotals.considered++;
-		const started = Date.now();
 		try {
-			const terms = extractTerms(latestUser, lastAssistantText, JSON.stringify(event.input ?? {}));
-			const cands = await buildCandidatesAsync(event.toolName, event.input, text, terms, viewParams);
+			const out = await lens.compress({ toolCallId: event.toolCallId, toolName: event.toolName, args: event.input, text, isError: event.isError, context: { firstUser, latestUser, agentText: lastAssistantText } }, signal);
 			if (epoch !== generation || signal.aborted) return;
-			if (cands.views.length < 2) {
+			if (out.reason === "no-candidates") {
 				log({ event: "presend", id: event.toolCallId, tool: event.toolName, tokens, view: "full", reason: "no-candidates" });
 				return;
 			}
-			const totalLines = text.split("\n").length;
-			const state = buildPresendState(cfg, { firstUser, latestUser, agentText: lastAssistantText, toolName: event.toolName, args: event.input, isError: event.isError, cands, totalLines, totalChars: text.length });
-			const answer = await presend.choose(state, cands.views.map((v) => v.kind), signal);
-			if (epoch !== generation || signal.aborted) return;
-			let view = decideView(answer, cands, cfg);
-			let expanded: number[] | undefined;
-			if (view.kind !== "full") {
-				const above = cands.kind === "command" ? cfg.presendSectionExpandAbove : cfg.presendExpandAbove;
-				const ex = await expandRelevantBlocks(presend, state, text, cands, view, above, signal, cands.blocks, cfg.presendSectionFloor);
-				if (epoch !== generation || signal.aborted) return;
-				if (ex) { view = ex.view; expanded = ex.probs.map((p, i) => (p > above ? i : -1)).filter((i) => i >= 0); }
-			}
 			health.success("presend");
 			status(ctx);
-			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: cands.kind, tokens, view: view.kind, viewTokens: estimateTokensOfText(view.text), chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded, candidates: cands.views.map((v) => `${v.kind}:${v.chars}`), ms: Date.now() - started });
-			if (view.kind === "full") return;
+			const view = out.view!, answer = out.answer!;
+			log({ event: "presend", id: event.toolCallId, tool: event.toolName, kind: out.kind, tokens, view: view.kind, viewTokens: out.sentTokens, chosen: answer.choice, needsFull: answer.needsFull, p: answer.probabilities, confidence: answer.confidence, expanded: out.expanded, candidates: out.candidates, ms: out.ms });
+			if (!out.compressed) return;
 			presendTotals.compressed++;
-			presendTotals.tokensSaved += tokens - estimateTokensOfText(view.text);
+			presendTotals.tokensSaved += tokens - out.sentTokens;
 			fullOutputs.set(event.toolCallId, { text, toolName: event.toolName, args: event.input, view: view.kind });
-			remember({ id: event.toolCallId, toolName: event.toolName, args: event.input, kind: cands.kind, view: view.kind, tokensBefore: tokens, tokensAfter: estimateTokensOfText(view.text), full: text, sent: view.text, included: view.included, needsFull: answer.needsFull, pFull: answer.probabilities.full, recalls: 0, at: Date.now() });
-			const details = { ...((event.details as object) ?? {}), jevLens: { full: text, view: view.kind, kind: cands.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull, included: view.included } };
+			remember({ id: event.toolCallId, toolName: event.toolName, args: event.input, kind: out.kind!, view: view.kind, tokensBefore: tokens, tokensAfter: out.sentTokens, full: text, sent: view.text, included: view.included, needsFull: answer.needsFull, pFull: answer.probabilities.full, recalls: 0, at: Date.now() });
+			const details = { ...((event.details as object) ?? {}), jevLens: { full: text, view: view.kind, kind: out.kind, args: event.input, p: answer.probabilities, needsFull: answer.needsFull, included: view.included } };
 			status(ctx);
-			return { content: [{ type: "text", text: view.text + footer(view, event.toolCallId, totalLines) }], details };
+			return { content: [{ type: "text", text: out.text }], details };
 		} catch (err) {
 			if (epoch !== generation || signal.aborted) return;
 			health.failure("presend", err);
@@ -409,11 +393,11 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "recall",
 		label: "Recall",
-		description: "Return the full output of an earlier tool call that jev-lens showed in a reduced view (or that was pruned). Pass the id from the [jev-lens: ...] note. Optionally restrict to a line range \"a-b\" or to lines matching a pattern (case-insensitive substring or /regex/).",
+		description: RECALL_DESCRIPTION,
 		parameters: Type.Object({
-			id: Type.String({ description: "toolCallId from the jev-lens note" }),
-			lines: Type.Optional(Type.String({ description: "Line range like 120-180 (1-based, inclusive)" })),
-			pattern: Type.Optional(Type.String({ description: "Only lines matching this substring or /regex/, with 2 lines of context" })),
+			id: Type.String({ description: RECALL_PARAM_DESCRIPTIONS.id }),
+			lines: Type.Optional(Type.String({ description: RECALL_PARAM_DESCRIPTIONS.lines })),
+			pattern: Type.Optional(Type.String({ description: RECALL_PARAM_DESCRIPTIONS.pattern })),
 		}),
 		async execute(_toolCallId, params) {
 			presendTotals.recalls++;
@@ -421,28 +405,9 @@ export default function (pi: ExtensionAPI) {
 			if (rec) rec.recalls++;
 			const hit = fullOutputs.get(params.id);
 			log({ event: "recall", id: params.id, found: !!hit, lines: params.lines, pattern: params.pattern });
-			if (!hit) return { content: [{ type: "text", text: `No stored output for id ${params.id}. Re-run the original tool instead.` }], details: { id: params.id, lines: 0 } };
-			const all = hit.text.split("\n");
-			let idx = all.map((_, i) => i);
-			if (params.lines) {
-				const m = params.lines.match(/^(\d+)\s*-\s*(\d+)$/);
-				if (!m) return { content: [{ type: "text", text: "lines must look like 120-180" }], details: { id: params.id, lines: 0 } };
-				const a = Math.max(1, Number(m[1])), b = Math.min(all.length, Number(m[2]));
-				idx = idx.filter((i) => i + 1 >= a && i + 1 <= b);
-			}
-			if (params.pattern) {
-				let test: (l: string) => boolean;
-				const rx = params.pattern.match(/^\/(.*)\/([a-z]*)$/);
-				if (rx) { const re = new RegExp(rx[1], rx[2].includes("i") ? rx[2] : rx[2] + "i"); test = (l) => re.test(l); }
-				else { const needle = params.pattern.toLowerCase(); test = (l) => l.toLowerCase().includes(needle); }
-				const keep = new Set<number>();
-				for (const i of idx) if (test(all[i])) for (let j = Math.max(0, i - 2); j <= Math.min(all.length - 1, i + 2); j++) keep.add(j);
-				idx = idx.filter((i) => keep.has(i));
-			}
-			const width = String(all.length).length;
-			const body = idx.length === all.length ? hit.text : idx.map((i) => `${String(i + 1).padStart(width)}│ ${all[i]}`).join("\n");
-			const header = idx.length === all.length ? "" : `[${idx.length} of ${all.length} lines from ${hit.toolName} ${truncate(JSON.stringify(hit.args ?? {}), 80)}]\n`;
-			return { content: [{ type: "text", text: header + body }], details: { id: params.id, lines: idx.length } };
+			if (!hit) return { content: [{ type: "text", text: recallMissText(params.id) }], details: { id: params.id, lines: 0 } };
+			const slice = sliceRecall(hit, params);
+			return { content: [{ type: "text", text: slice.text }], details: { id: params.id, lines: slice.count } };
 		},
 	});
 

@@ -1,0 +1,50 @@
+{
+  "name": "pi-jev-lens",
+  "version": "0.5.0",
+  "description": "pi extension that compresses large tool results before they reach the model: jev picks the view (outline, relevant blocks, sections, signals, testlog), full text stays recallable",
+  "author": "Didrik Rognstad",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dizk/jev-lens.git",
+    "directory": "packages/pi"
+  },
+  "homepage": "https://github.com/dizk/jev-lens#readme",
+  "bugs": {
+    "url": "https://github.com/dizk/jev-lens/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "typesafe",
+    "jev",
+    "context",
+    "compression",
+    "prompt-cache",
+    "tool-output"
+  ],
+  "type": "module",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "jev-lens": "^0.5.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.3",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

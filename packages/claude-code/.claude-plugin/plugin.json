@@ -1,0 +1,14 @@
+{
+  "name": "jev-lens",
+  "displayName": "jev-lens",
+  "version": "0.5.0",
+  "description": "Compresses large Read, Bash and Grep results before Claude sees them. jev (TypeSafe) picks a view built from the output's own lines; the full output stays recallable.",
+  "author": {
+    "name": "Didrik Rognstad",
+    "url": "https://github.com/dizk"
+  },
+  "homepage": "https://github.com/dizk/jev-lens",
+  "repository": "https://github.com/dizk/jev-lens",
+  "license": "MIT",
+  "keywords": ["context", "compression", "tool-output", "jev", "typesafe", "prompt-cache"]
+}

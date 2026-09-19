@@ -1,25 +1,24 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "strict": true,
     "noEmit": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
     "allowImportingTsExtensions": true,
-    "types": [
-      "node"
-    ]
+    "paths": {
+      "jev-lens": ["./packages/core/src/index.ts"]
+    }
   },
   "include": [
-    "index.ts",
-    "src/**/*.ts",
-    "eval/**/*.ts",
-    "test/**/*.ts"
+    "packages/core/src/**/*.ts",
+    "packages/core/test/**/*.ts",
+    "packages/pi/index.ts",
+    "packages/pi/src/**/*.ts",
+    "packages/pi/test/**/*.ts",
+    "eval/**/*.ts"
   ],
   "exclude": [
-    "test/samples/**",
+    "packages/core/test/samples/**",
     "node_modules",
     "eval/runs/**",
     "eval/fixture/**"

@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildCandidates, detectKind, displayedFiles, extractTerms, kindOfFiles, focusView, footer, headTailView, looksRepetitive, outlineView, sampleView, signalsView } from "../src/views.ts";
 
-const categories = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
-const csv = readFileSync(new URL("../eval/fixture/data/sample.csv", import.meta.url), "utf8");
-const design = readFileSync(new URL("../eval/fixture/docs/DESIGN.md", import.meta.url), "utf8");
+const categories = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
+const csv = readFileSync(new URL("../../../eval/fixture/data/sample.csv", import.meta.url), "utf8");
+const design = readFileSync(new URL("../../../eval/fixture/docs/DESIGN.md", import.meta.url), "utf8");
 const testOut = Array.from({ length: 80 }, (_, i) => `✔ test case ${i} (0.${i}ms)`).join("\n") + "\n✖ parseDate accepts ISO dates (1ms)\n  AssertionError: Expected 2024-01-31\n  + actual - expected\nℹ pass 80\nℹ fail 1\n";
 
 describe("detectKind", () => {

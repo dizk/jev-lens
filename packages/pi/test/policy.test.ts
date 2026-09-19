@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig } from "jev-lens";
 import { applyLedger, decideBucket, stubText, transformToolResult, trimText } from "../src/policy.ts";
 import { rebuildLedger } from "../src/ledger.ts";
 import type { AgentMessage } from "../src/pi-types.ts";
-import type { Decision } from "../src/types.ts";
+import type { Decision } from "jev-lens";
 
 const cfg = loadConfig();
 

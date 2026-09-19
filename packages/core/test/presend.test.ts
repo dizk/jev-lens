@@ -5,7 +5,7 @@ import { buildPresendState, decideView, MockPresend, presendQuestions } from "..
 import { buildCandidates } from "../src/views.ts";
 
 const cfg = loadConfig();
-const categories = readFileSync(new URL("../eval/fixture/src/categories.js", import.meta.url), "utf8");
+const categories = readFileSync(new URL("../../../eval/fixture/src/categories.js", import.meta.url), "utf8");
 
 describe("presend", () => {
 	const cands = buildCandidates("read", { path: "src/categories.js" }, categories, ["normalizeCategory"]);

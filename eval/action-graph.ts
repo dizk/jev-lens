@@ -12,9 +12,9 @@
  */
 import { readFileSync } from "node:fs";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
-import { loadConfig } from "../src/config.ts";
-import type { AgentMessage } from "../src/pi-types.ts";
-import { contentText, truncate } from "../src/text.ts";
+import { loadConfig } from "jev-lens";
+import type { AgentMessage } from "../packages/pi/src/pi-types.ts";
+import { contentText, truncate } from "jev-lens";
 
 type Node = string;
 interface Edge { from: Node; to: Node; n: number; ok: number }

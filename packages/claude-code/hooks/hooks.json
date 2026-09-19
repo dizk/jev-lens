@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^(Read|Bash|Grep)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/src/hook.ts\"",
+            "timeout": 40,
+            "statusMessage": "jev-lens is choosing a view"
+          }
+        ]
+      }
+    ]
+  }
+}

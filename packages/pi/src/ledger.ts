@@ -1,4 +1,4 @@
-import type { Decision } from "./types.ts";
+import type { Decision } from "jev-lens";
 
 export const ENTRY_TYPE = "jev-lens";
 
