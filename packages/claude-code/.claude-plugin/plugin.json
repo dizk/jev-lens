@@ -1,7 +1,7 @@
 {
   "name": "jev-lens",
   "displayName": "jev-lens",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Compresses large Read, Bash and Grep results before Claude sees them. jev (TypeSafe) picks a view built from the output's own lines; the full output stays recallable.",
   "author": {
     "name": "Didrik Rognstad",

@@ -1,6 +1,6 @@
 {
   "name": "claude-jev-lens",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Claude Code plugin: jev picks what the model gets to see of large Read, Bash and Grep results before they are sent; the full output stays recallable through an MCP tool.",
   "author": "Didrik Rognstad",

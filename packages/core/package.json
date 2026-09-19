@@ -1,6 +1,6 @@
 {
   "name": "jev-lens",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "jev picks what a coding agent gets to see of a large tool result: views built from the output's own lines, chosen by TypeSafe's judgment model, full text recallable. Host-independent core used by pi-jev-lens and the Claude Code plugin.",
   "author": "Didrik Rognstad",
   "license": "MIT",

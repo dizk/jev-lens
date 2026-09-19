@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "jev-lens: jev picks what Claude gets to see of large tool results",
-    "version": "0.5.1"
+    "version": "0.5.2"
   },
   "plugins": [
     {
       "name": "jev-lens",
       "source": "./packages/claude-code",
       "description": "Compresses large Read, Bash and Grep results before Claude sees them; the full output stays recallable through an MCP tool. Needs a TypeSafe API key.",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "category": "productivity",
       "keywords": ["context", "compression", "tool-output", "jev", "typesafe"]
     }

@@ -1,7 +1,7 @@
 {
   "name": "jev-lens-monorepo",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "jev picks what the model gets to see of large tool results. Core library, pi extension and Claude Code plugin.",
   "author": "Didrik Rognstad",
   "license": "MIT",

@@ -7,7 +7,7 @@ import { RECALL_DESCRIPTION, RECALL_PARAM_DESCRIPTIONS, recallMissText, sliceRec
 import { statsText } from "./stats.ts";
 import { appendLog, loadOutput } from "./store.ts";
 
-const VERSION = "0.5.1";
+const VERSION = "0.5.2";
 
 interface Request { jsonrpc?: string; id?: number | string | null; method?: string; params?: Record<string, unknown> }
 

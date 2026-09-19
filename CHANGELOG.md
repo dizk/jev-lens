@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.2 (2026-09-19)
+
+Compression rules, views and thresholds are unchanged; the core and the pi extension are republished because all
+packages share one version. Everything below is about the Claude Code plugin and the benchmark.
 
 - Claude Code plugin: stored outputs are kept for 90 days (`JEV_LENS_KEEP_DAYS`), up from 14, so sessions can be
   replayed offline. `src/trajectory.ts` exports transcripts as benchmark trajectories with the full outputs restored
