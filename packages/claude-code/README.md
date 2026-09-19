@@ -66,13 +66,14 @@ line numbers, so this does not affect them. `Bash` and `Grep` output is passed t
   1200 tokens or more. Images, `Edit` and `Write` results, other tools and MCP tools are untouched.
 - Decides once, before the first send, so the prompt cache is not disturbed. It never rewrites earlier messages;
   Claude Code has no hook for that, and the pi extension's optional post-send pruning does not exist here.
-- Reads the task, the latest user message and what Claude wrote before the call from the session transcript, the
-  way the pi extension reads them from the session. The text before the call is the text of the message that holds
-  the call; when Claude called the tool without saying anything (common, and its thinking is stored empty), the
-  latest text of the same turn is used, then the latest text of an earlier turn. The log records which
-  (`agentTextSource`). Sub-agents have their own transcript files next to the session's, and the hook finds a
-  sub-agent's call there. The transcript is written asynchronously and can lag the current turn
-  (`transcriptHasCall: false` in the log); the hook uses whatever is there.
+- Gives jev the task, the latest user message and what Claude wrote before the call, the way the pi extension
+  does. Two light hooks capture them as they happen: `UserPromptSubmit` appends the prompt and `MessageDisplay`
+  appends each batch of assistant text, as it streams and before any tool of that message runs, to `events.jsonl`
+  in the data directory with a shell `cat`. Both print nothing, so nothing is displayed or added to the
+  conversation. When Claude called the tool without saying anything (common, and its thinking is stored empty), the
+  latest text of the same turn is used, then the latest of an earlier turn. Sub-agents are not displayed, so a
+  sub-agent's call reads its own transcript file next to the session's; that file is written asynchronously and can
+  lag. The log records where the context came from (`contextVia`, `agentTextSource`, `transcriptHasCall`).
 - Runs as one node process per large tool result: about 0.1 s of startup plus one or two jev requests of 0.4 to
   0.8 s. Small results exit before the core is loaded. Anything unexpected ends with the original output.
 - Stores full outputs and the log in `$CLAUDE_PLUGIN_DATA` (Claude Code's persistent plugin directory), or
@@ -146,12 +147,13 @@ The full list is in the [pi extension's README](https://github.com/dizk/jev-lens
 
 ```
 .claude-plugin/plugin.json   manifest
-hooks/hooks.json             PostToolUse on ^(Read|Bash|Grep)$ → node src/hook.ts
+hooks/hooks.json             PostToolUse on ^(Read|Bash|Grep)$ → node src/hook.ts; UserPromptSubmit and MessageDisplay → cat >> events.jsonl
 .mcp.json                    the recall/stats MCP server → node src/mcp.ts
 commands/stats.md            /jev-lens:stats
 src/hook.ts                  the hook: normalize the result, ask the core, print updatedToolOutput
 src/claude.ts                Claude Code's tool output shapes ↔ the core's canonical tools
-src/transcript.ts            task and agent text from the session transcript, main or sub-agent
+src/events.ts                task and agent text from the captured events, main thread
+src/transcript.ts            the same from the transcript file, for sub-agents and as fallback
 src/trajectory.ts            export transcripts as benchmark trajectories, full outputs restored
 src/store.ts                 outputs, log, key file, pruning
 src/mcp.ts                   a dependency-free MCP server over stdio

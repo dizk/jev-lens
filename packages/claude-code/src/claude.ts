@@ -12,6 +12,8 @@ export interface PostToolUseInput {
 	tool_input?: Record<string, unknown>;
 	tool_response?: unknown;
 	tool_use_id?: string;
+	/** Present when the hook fires inside a sub-agent. */
+	agent_id?: string;
 }
 
 export interface Normalized {

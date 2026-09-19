@@ -12,6 +12,28 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"${JEV_LENS_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-$HOME/.claude/jev-lens}}\"; mkdir -p \"$d\" && cat >> \"$d/events.jsonl\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"${JEV_LENS_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-$HOME/.claude/jev-lens}}\"; mkdir -p \"$d\" && cat >> \"$d/events.jsonl\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
