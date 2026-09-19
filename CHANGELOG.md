@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Claude Code plugin: `src/statusline.ts` prints a status line segment for the current session, in the shape of the
+  pi extension's status text (`jev-lens −12.3k · 5/8 · 1 recall`). Claude Code has no plugin-provided status line,
+  so the README shows how to append it to your own `statusLine` command.
+
 ## 0.5.0 (2026-09-19)
 
 The repository is now `dizk/jev-lens`, a monorepo with three packages that share one core. Compression rules,

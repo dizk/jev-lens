@@ -74,6 +74,33 @@ line numbers, so this does not affect them. `Bash` and `Grep` output is passed t
   `~/.claude/jev-lens` when that is not set. The key file is always `~/.claude/jev-lens/key.json`. Stored outputs older than 14 days are removed. `JEV_LENS_DATA_DIR`
   overrides the location.
 
+## Status line
+
+Claude Code has no plugin-provided status line, but the plugin ships a segment you can add to your own
+`statusLine` command. It reads the session id from the JSON Claude Code passes on stdin and prints this
+session's totals in the same shape as the pi extension's status line:
+
+```
+jev-lens −12.3k · 5/8 · 1 recall
+```
+
+Tokens kept out of the prompt, results compressed of results considered, and recalls. `(mock)` means the mock
+classifier decided, `(degraded)` that a compression failed this session. Append it to the script behind
+`statusLine.command` in `~/.claude/settings.json` (create one with `/statusline` if you have none):
+
+```sh
+input=$(cat)
+# ... your own segments ...
+jev=$(ls -t "$HOME"/.claude/plugins/cache/jev-lens/jev-lens/*/src/statusline.ts 2>/dev/null | head -1)
+[ -n "$jev" ] && printf ' %s' "$(printf '%s' "$input" | node "$jev")"
+```
+
+The `ls` finds the installed plugin version; with `claude --plugin-dir` point at `packages/claude-code/src/statusline.ts`
+in your checkout instead. Claude Code refreshes the status line when an assistant message arrives (and on a
+`refreshInterval`, if you set one), so the numbers move once per turn, not per tool call. The segment costs one
+node start (about 0.05 s) per refresh. It looks for the log in `JEV_LENS_DATA_DIR`, every `~/.claude/plugins/data/jev-lens-*` directory
+and `~/.claude/jev-lens`, because the status line command runs without `CLAUDE_PLUGIN_DATA`.
+
 ## Configuration
 
 The same `JEV_LENS_*` environment variables as the pi extension, read from the environment Claude Code runs in.
@@ -104,6 +131,7 @@ src/claude.ts                Claude Code's tool output shapes ↔ the core's can
 src/transcript.ts            task and agent text from the session transcript
 src/store.ts                 outputs, log, key file, pruning
 src/mcp.ts                   a dependency-free MCP server over stdio
+src/statusline.ts            the status line segment: this session's totals from the log
 ```
 
 MIT.

@@ -66,13 +66,34 @@ export function appendLog(record: Record<string, unknown>): void {
 	} catch {}
 }
 
-export function readLog(): Record<string, unknown>[] {
+export function readLog(file = logFile()): Record<string, unknown>[] {
 	try {
-		if (!existsSync(logFile())) return [];
-		return readFileSync(logFile(), "utf8").split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l) as Record<string, unknown>]; } catch { return []; } });
+		if (!existsSync(file)) return [];
+		return readFileSync(file, "utf8").split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l) as Record<string, unknown>]; } catch { return []; } });
 	} catch {
 		return [];
 	}
+}
+
+/**
+ * Every log file the plugin may have written, for processes that Claude Code starts without
+ * CLAUDE_PLUGIN_DATA (the statusLine command): the configured directory, the fallback, and the
+ * plugin data directory of every marketplace the plugin is installed from.
+ */
+export function candidateLogFiles(): string[] {
+	const files = new Set<string>([logFile()]);
+	try {
+		const data = join(homedir(), ".claude", "plugins", "data");
+		if (existsSync(data)) for (const d of readdirSync(data)) if (d.startsWith("jev-lens-")) files.add(join(data, d, "log.jsonl"));
+	} catch {}
+	files.add(join(homedir(), ".claude", "jev-lens", "log.jsonl"));
+	return [...files].filter((f) => existsSync(f));
+}
+
+/** The records of every candidate log, in time order. */
+export function readAllLogs(): Record<string, unknown>[] {
+	const num = (v: unknown) => (typeof v === "number" ? v : 0);
+	return candidateLogFiles().flatMap((f) => readLog(f)).sort((a, b) => num(a.t) - num(b.t));
 }
 
 const DAY = 24 * 60 * 60 * 1000;
