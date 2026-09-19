@@ -11,8 +11,9 @@ export function dataDir(): string {
 	return process.env.JEV_LENS_DATA_DIR || process.env.CLAUDE_PLUGIN_DATA || join(homedir(), ".claude", "jev-lens");
 }
 
+/** The key file has a fixed, documented place, independent of where Claude Code puts plugin data. */
 export function keyFile(): string {
-	return join(dataDir(), "key.json");
+	return join(homedir(), ".claude", "jev-lens", "key.json");
 }
 
 export function logFile(): string {

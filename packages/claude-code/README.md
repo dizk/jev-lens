@@ -70,8 +70,8 @@ line numbers, so this does not affect them. `Bash` and `Grep` output is passed t
   transcript is written asynchronously and can lag the current turn; the hook uses whatever is there.
 - Runs as one node process per large tool result: about 0.1 s of startup plus one or two jev requests of 0.4 to
   0.8 s. Small results exit before the core is loaded. Anything unexpected ends with the original output.
-- Stores full outputs, the log and the key in `$CLAUDE_PLUGIN_DATA` (Claude Code's persistent plugin directory),
-  or `~/.claude/jev-lens` when that is not set. Stored outputs older than 14 days are removed. `JEV_LENS_DATA_DIR`
+- Stores full outputs and the log in `$CLAUDE_PLUGIN_DATA` (Claude Code's persistent plugin directory), or
+  `~/.claude/jev-lens` when that is not set. The key file is always `~/.claude/jev-lens/key.json`. Stored outputs older than 14 days are removed. `JEV_LENS_DATA_DIR`
   overrides the location.
 
 ## Configuration
@@ -87,7 +87,7 @@ The ones that matter most:
 | `JEV_LENS_PRESEND_COMMAND_NEEDS_FULL_ABOVE` | `0.65` | the same for command output |
 | `JEV_LENS_CLASSIFIER=mock` | | force the mock classifier |
 | `JEV_LENS_MODEL` | `jev-latest` | the jev model |
-| `JEV_LENS_KEY_FILE` | `<data dir>/key.json` | where the key file lives |
+| `JEV_LENS_KEY_FILE` | `~/.claude/jev-lens/key.json` | where the key file lives |
 | `JEV_LENS_HOOK_TIMEOUT_MS` | `30000` | the hook gives up and returns the original after this |
 
 The full list is in the [pi extension's README](https://github.com/dizk/jev-lens/tree/main/packages/pi#configuration-environment).
